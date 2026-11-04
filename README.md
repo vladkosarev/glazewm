@@ -8,6 +8,7 @@
 > | **Cycle column width** through preset widths (default 33% / 50% / 67%). | `cycle-column-width` | `alt+w` |
 > | **Center the focused column.** | `center-column` | `alt+c` |
 > | **Scroll animation** (experimental) – columns slide instead of jumping when the screen scrolls. | `layout: { scroll_animation_ms: 150 }` | – |
+> | **Jump to first/last column**, or move the focused column there (like niri). | `focus-column-first` / `focus-column-last`, `move-column-to-first` / `move-column-to-last` | `alt+home` / `alt+end`, `alt+ctrl+home` / `alt+ctrl+end` |
 > | **Fit N columns per screen** – resize all columns so N fit on screen. | `set-columns-per-screen <n>` | `alt+ctrl+1` … `alt+ctrl+0` (= 10) |
 >
 > Full docs: [Config: Layout](#config-layout). Minimal config to enable it:
@@ -320,6 +321,18 @@ keybindings:
   # Center the focused column on screen.
   - commands: ["center-column"]
     bindings: ["alt+c"]
+
+  # Focus the first/last column of the workspace.
+  - commands: ["focus-column-first"]
+    bindings: ["alt+home"]
+  - commands: ["focus-column-last"]
+    bindings: ["alt+end"]
+
+  # Move the focused column to the start/end of the workspace.
+  - commands: ["move-column-to-first"]
+    bindings: ["alt+ctrl+home"]
+  - commands: ["move-column-to-last"]
+    bindings: ["alt+ctrl+end"]
 
   # Resize all columns such that the given number fit on screen.
   - commands: ["set-columns-per-screen 2"]

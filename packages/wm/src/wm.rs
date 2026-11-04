@@ -18,8 +18,9 @@ use crate::{
   commands::{
     container::{
       balance_tiling_sizes, center_column, cycle_column_width,
-      focus_container_by_id, focus_in_direction, set_columns_per_screen,
-      set_tiling_direction, toggle_tiling_direction,
+      focus_column_end, focus_container_by_id, focus_in_direction,
+      move_column_to_end, set_columns_per_screen, set_tiling_direction,
+      toggle_tiling_direction, ColumnEnd,
     },
     general::{
       cycle_focus, disable_binding_mode, enable_binding_mode,
@@ -274,6 +275,20 @@ impl WindowManager {
           subject_container.workspace().context("No workspace.")?;
 
         balance_tiling_sizes(&workspace, state)
+      }
+      InvokeCommand::FocusColumnFirst => {
+        focus_column_end(&subject_container, ColumnEnd::First, state);
+        Ok(())
+      }
+      InvokeCommand::FocusColumnLast => {
+        focus_column_end(&subject_container, ColumnEnd::Last, state);
+        Ok(())
+      }
+      InvokeCommand::MoveColumnToFirst => {
+        move_column_to_end(&subject_container, ColumnEnd::First, state)
+      }
+      InvokeCommand::MoveColumnToLast => {
+        move_column_to_end(&subject_container, ColumnEnd::Last, state)
       }
       InvokeCommand::CenterColumn => {
         center_column(&subject_container, state)

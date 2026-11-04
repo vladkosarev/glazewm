@@ -161,8 +161,12 @@ pub enum InvokeCommand {
   Close,
   CycleColumnWidth,
   Focus(InvokeFocusCommand),
+  FocusColumnFirst,
+  FocusColumnLast,
   Ignore,
   Move(InvokeMoveCommand),
+  MoveColumnToFirst,
+  MoveColumnToLast,
   MoveWorkspace {
     #[clap(long)]
     direction: Direction,
