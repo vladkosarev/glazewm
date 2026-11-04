@@ -52,17 +52,30 @@ impl ScrollingStrip {
       .map_or(0, |(start, width)| start + width)
   }
 
-  /// Whether the column at the given index fits entirely within the
-  /// viewport.
+  /// Whether the column at the given index should be shown.
+  ///
+  /// Columns that fit entirely within the viewport are always shown.
+  /// Columns that are cut off by an edge of the viewport are only shown
+  /// if peeking is allowed on that edge.
   pub fn is_column_visible(
     &self,
     index: usize,
     scroll_offset: i32,
+    can_peek_left: bool,
+    can_peek_right: bool,
   ) -> bool {
     self.column(index).is_some_and(|(start, width)| {
-      start >= scroll_offset - VISIBILITY_TOLERANCE
-        && start + width
-          <= scroll_offset + self.viewport_width + VISIBILITY_TOLERANCE
+      let viewport_end = scroll_offset + self.viewport_width;
+
+      let is_in_view =
+        start < viewport_end && start + width > scroll_offset;
+      let is_cut_off_left = start < scroll_offset - VISIBILITY_TOLERANCE;
+      let is_cut_off_right =
+        start + width > viewport_end + VISIBILITY_TOLERANCE;
+
+      is_in_view
+        && (!is_cut_off_left || can_peek_left)
+        && (!is_cut_off_right || can_peek_right)
     })
   }
 
@@ -85,8 +98,9 @@ impl ScrollingStrip {
 
     match center_mode {
       CenterFocusedColumn::Always => centered_offset,
-      CenterFocusedColumn::Never => self
-        .clamp_offset(self.minimal_offset(start, width, current_offset)),
+      CenterFocusedColumn::Never => {
+        self.scroll_into_view(start, width, current_offset)
+      }
       CenterFocusedColumn::OnOverflow => {
         let fits_with_prev = prev_focused
           .and_then(|i| self.column(i))
@@ -97,11 +111,7 @@ impl ScrollingStrip {
           });
 
         if fits_with_prev {
-          self.clamp_offset(self.minimal_offset(
-            start,
-            width,
-            current_offset,
-          ))
+          self.scroll_into_view(start, width, current_offset)
         } else {
           self.clamp_offset(centered_offset)
         }
@@ -123,17 +133,23 @@ impl ScrollingStrip {
   }
 
   /// Gets the offset closest to `current_offset` that shows the given
-  /// column span.
-  fn minimal_offset(
+  /// column span in its entirety.
+  ///
+  /// The offset is left unchanged if the column span is already in view.
+  /// This preserves manual scrolling (e.g. via `center-column`), even if
+  /// it leaves empty space at the ends of the strip.
+  fn scroll_into_view(
     &self,
     start: i32,
     width: i32,
     current_offset: i32,
   ) -> i32 {
-    if start < current_offset {
-      start
-    } else if start + width > current_offset + self.viewport_width {
-      start + width - self.viewport_width
+    if start < current_offset - VISIBILITY_TOLERANCE {
+      self.clamp_offset(start)
+    } else if start + width
+      > current_offset + self.viewport_width + VISIBILITY_TOLERANCE
+    {
+      self.clamp_offset(start + width - self.viewport_width)
     } else {
       current_offset
     }
@@ -274,15 +290,39 @@ mod tests {
   }
 
   #[test]
-  fn only_fully_contained_columns_are_visible() {
+  fn manual_centering_is_preserved_while_focused_column_is_in_view() {
+    let strip = ScrollingStrip::new(&[0.5, 0.5], VIEWPORT, GAP);
+    let centered = strip.centered_offset(0).unwrap();
+
+    // Centering the first column leaves empty space on the left.
+    assert_eq!(centered, -255);
+
+    assert_eq!(
+      strip.scroll_offset_for_focus(
+        Some(0),
+        None,
+        centered,
+        &CenterFocusedColumn::Never,
+      ),
+      centered
+    );
+  }
+
+  #[test]
+  fn cut_off_columns_are_only_visible_if_peeking_is_allowed() {
     let strip = ScrollingStrip::new(&[0.5, 0.5, 0.5], VIEWPORT, GAP);
 
-    assert!(strip.is_column_visible(0, 0));
-    assert!(strip.is_column_visible(1, 0));
-    assert!(!strip.is_column_visible(2, 0));
+    assert!(strip.is_column_visible(0, 0, false, false));
+    assert!(strip.is_column_visible(1, 0, false, false));
 
-    // Partially scrolled, so column 0 is cut off.
-    assert!(!strip.is_column_visible(0, 255));
-    assert!(strip.is_column_visible(1, 255));
+    // Column 2 starts beyond the viewport, so it can't peek.
+    assert!(!strip.is_column_visible(2, 0, true, true));
+
+    // Partially scrolled, so column 0 and 2 are cut off.
+    assert!(!strip.is_column_visible(0, 255, false, true));
+    assert!(strip.is_column_visible(0, 255, true, false));
+    assert!(strip.is_column_visible(1, 255, false, false));
+    assert!(!strip.is_column_visible(2, 255, true, false));
+    assert!(strip.is_column_visible(2, 255, false, true));
   }
 }

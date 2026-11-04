@@ -181,12 +181,24 @@ impl Workspace {
     ))
   }
 
-  /// Whether a column of the scrolling layout fits entirely within the
-  /// viewport.
-  pub fn is_column_in_viewport(&self, column_id: Uuid) -> bool {
+  /// Whether a column of the scrolling layout should be shown.
+  ///
+  /// Columns cut off by an edge of the viewport are only shown if peeking
+  /// is allowed on that edge (see `ScrollingStrip::is_column_visible`).
+  pub fn is_column_visible(
+    &self,
+    column_id: Uuid,
+    can_peek_left: bool,
+    can_peek_right: bool,
+  ) -> bool {
     self.column_index(column_id).is_some_and(|index| {
       self.scrolling_strip().is_ok_and(|strip| {
-        strip.is_column_visible(index, self.scroll_offset())
+        strip.is_column_visible(
+          index,
+          self.scroll_offset(),
+          can_peek_left,
+          can_peek_right,
+        )
       })
     })
   }
@@ -469,15 +481,15 @@ mod tests {
     // Initially, the first two columns fill the viewport.
     set_focused_descendant(&windows[0].clone().into(), None);
     assert!(!workspace.sync_scroll_offset().unwrap());
-    assert!(workspace.is_column_in_viewport(windows[1].id()));
-    assert!(!workspace.is_column_in_viewport(windows[2].id()));
+    assert!(workspace.is_column_visible(windows[1].id(), false, false));
+    assert!(!workspace.is_column_visible(windows[2].id(), true, true));
 
     // Focusing the third column scrolls it into view.
     set_focused_descendant(&windows[2].clone().into(), None);
     assert!(workspace.sync_scroll_offset().unwrap());
     assert_eq!(workspace.scroll_offset(), half_width);
-    assert!(!workspace.is_column_in_viewport(windows[0].id()));
-    assert!(workspace.is_column_in_viewport(windows[2].id()));
+    assert!(!workspace.is_column_visible(windows[0].id(), true, true));
+    assert!(workspace.is_column_visible(windows[2].id(), false, false));
 
     let rect = windows[2].to_rect().unwrap();
     assert_eq!(rect.x(), half_width);

@@ -9,7 +9,7 @@ use wm_common::{
 use wm_platform::NativeWindowWindowsExt;
 #[cfg(target_os = "windows")]
 use wm_platform::{CornerStyle, OpacityValue};
-use wm_platform::{Rect, WindowZOrder};
+use wm_platform::{Direction, Rect, WindowZOrder};
 
 use crate::{
   models::{Container, WindowContainer, Workspace},
@@ -304,10 +304,19 @@ fn redraw_containers(
     }
 
     // Whether the window is a column that is scrolled out of view in the
-    // scrolling layout.
+    // scrolling layout. Columns that are cut off by the screen edge are
+    // shown, unless they would overlap an adjacent monitor.
     let is_scrolled_out = workspace.is_scrolling()
       && window.is_tiling_window()
-      && !workspace.is_column_in_viewport(window.id());
+      && !workspace.is_column_visible(
+        window.id(),
+        state
+          .monitor_in_direction(&monitor, &Direction::Left)?
+          .is_none(),
+        state
+          .monitor_in_direction(&monitor, &Direction::Right)?
+          .is_none(),
+      );
 
     // Transition display state depending on whether window will be
     // shown or hidden.
