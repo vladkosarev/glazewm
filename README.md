@@ -30,6 +30,7 @@ GlazeWM lets you easily organize windows and adjust their layout on the fly by u
 
 - Simple YAML configuration
 - Multi-monitor support
+- Optional scrollable tiling layout (similar to niri or PaperWM)
 - Customizable rules for specific windows
 - Easy one-click installation
 - Integration with [Zebar](https://github.com/glzr-io/zebar) as a status bar
@@ -232,6 +233,61 @@ gaps:
     right: "20px"
     bottom: "20px"
     left: "20px"
+```
+
+### Config: Layout
+
+Tiling windows can either be tiled to fill the workspace (default), or arranged as columns on a horizontally scrollable strip, similar to [niri](https://github.com/YaLTeR/niri) or PaperWM. The layout is set via the `layout` property in the config file and applies to all workspaces.
+
+```yaml
+layout:
+  # How tiling windows are arranged within a workspace.
+  # - "tiling": Windows are tiled to fill the workspace.
+  # - "scrolling": Windows are arranged as columns on a scrollable strip.
+  type: "scrolling"
+
+  # (Scrolling layout) Width of newly tiled columns. Percentages are
+  # relative to the workspace width.
+  default_column_width: "50%"
+
+  # (Scrolling layout) Widths to cycle between via `cycle-column-width`.
+  preset_column_widths: ["33%", "50%", "67%"]
+
+  # (Scrolling layout) When to center the focused column.
+  # - "never": Scroll the minimum amount needed to show the column.
+  # - "always": Always center the focused column.
+  # - "on_overflow": Center the column if it doesn't fit on screen
+  #   together with the previously focused column.
+  center_focused_column: "never"
+```
+
+In the scrolling layout, the viewport follows the focused column. Columns cut off by the screen edge are partially shown, unless another monitor is adjacent on that side, in which case they are hidden. Columns entirely outside of the screen are hidden.
+
+Existing commands behave as follows in the scrolling layout:
+
+- `focus --direction left|right` moves focus between columns.
+- `move --direction left|right` swaps the column with its neighbor; `up|down` moves the window to the monitor in that direction.
+- `resize --width` and `size --width` change the column width; height changes are ignored.
+- `toggle-tiling-direction` and `set-tiling-direction` have no effect.
+- `balance` evenly sizes the columns that are on screen to fill the screen. In the tiling layout, it instead evenly sizes all windows on the workspace.
+
+Additional commands for the scrolling layout:
+
+```yaml
+keybindings:
+  # Cycle the focused column's width through `preset_column_widths`.
+  - commands: ["cycle-column-width"]
+    bindings: ["alt+w"]
+
+  # Center the focused column on screen.
+  - commands: ["center-column"]
+    bindings: ["alt+c"]
+
+  # Resize all columns such that the given number fit on screen.
+  - commands: ["set-columns-per-screen 2"]
+    bindings: ["alt+ctrl+2"]
+  - commands: ["set-columns-per-screen 3"]
+    bindings: ["alt+ctrl+3"]
 ```
 
 ### Config: Workspaces
