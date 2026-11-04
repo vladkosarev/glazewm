@@ -1,9 +1,5 @@
 use std::time::{Duration, Instant};
 
-/// Interval between frames of a scroll animation (~60 FPS).
-pub const SCROLL_ANIMATION_FRAME_INTERVAL: Duration =
-  Duration::from_millis(16);
-
 /// Animation of the scroll offset of the scrolling layout's viewport.
 ///
 /// Uses an ease-out cubic curve, such that the animation starts fast and

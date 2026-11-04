@@ -24,14 +24,14 @@ use wm_common::{AppCommand, InvokeCommand, Verbosity, WmEvent};
 #[cfg(target_os = "macos")]
 use wm_platform::DispatcherExtMacOs;
 use wm_platform::{
-  Dispatcher, DisplayListener, EventLoop, KeybindingListener,
+  Dispatcher, DisplayListener, EventLoop, FrameTicker, KeybindingListener,
   MouseEventKind, MouseListener, PlatformEvent, SingleInstance,
   WindowListener,
 };
 
 use crate::{
-  ipc_server::IpcServer, models::SCROLL_ANIMATION_FRAME_INTERVAL,
-  sys_tray::SystemTray, user_config::UserConfig, wm::WindowManager,
+  ipc_server::IpcServer, sys_tray::SystemTray, user_config::UserConfig,
+  wm::WindowManager,
 };
 
 mod commands;
@@ -184,14 +184,14 @@ async fn start_wm(
   cleanup_interval
     .set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-  // Create an interval for advancing scroll animations. Only polled while
-  // an animation is in progress.
-  let mut animation_interval =
-    tokio::time::interval(SCROLL_ANIMATION_FRAME_INTERVAL);
-  animation_interval
-    .set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+  // Ticks in sync with the display refresh rate for advancing scroll
+  // animations. Only enabled while an animation is in progress.
+  let frame_ticker = FrameTicker::new()?;
 
   loop {
+    let has_scroll_animations = wm.has_scroll_animations();
+    frame_ticker.set_enabled(has_scroll_animations);
+
     let res = tokio::select! {
       _ = signal::ctrl_c() => {
         tracing::info!("Received SIGINT signal.");
@@ -221,7 +221,7 @@ async fn start_wm(
         tracing::debug!("Received keyboard event: {:?}", event);
         wm.process_event(PlatformEvent::Keybinding(event), &mut config)
       }
-      _ = animation_interval.tick(), if wm.has_scroll_animations() => {
+      () = frame_ticker.next_tick(), if has_scroll_animations => {
         wm.step_scroll_animations(&config)
       },
       _ = cleanup_interval.tick() => {
