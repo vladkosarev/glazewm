@@ -179,19 +179,11 @@ impl ScrollingStrip {
   }
 }
 
-/// Converts a column size (fraction of the viewport) to a width in pixels.
-///
-/// Gaps are accounted for, such that e.g. two columns of size `0.5` fit
-/// exactly within the viewport.
-#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-pub fn column_width_px(size: f32, viewport_width: i32, gap: i32) -> i32 {
-  let size = clamp_column_size(size);
-  let width = (size * (viewport_width + gap) as f32).round() as i32 - gap;
-  width.clamp(1, viewport_width.max(1))
-}
-
 /// Converts a column width in pixels to a column size (fraction of the
-/// viewport). Inverse of `column_width_px`.
+/// viewport).
+///
+/// Gaps are accounted for, such that e.g. two columns of 490px with a 20px
+/// gap in a 1000px viewport are each of size `0.5`.
 #[allow(clippy::cast_precision_loss)]
 pub fn column_size_from_px(
   width: i32,
@@ -212,7 +204,7 @@ pub fn clamp_column_size(size: f32) -> f32 {
 mod tests {
   use wm_common::CenterFocusedColumn;
 
-  use super::{column_size_from_px, column_width_px, ScrollingStrip};
+  use super::{column_size_from_px, ScrollingStrip};
 
   const VIEWPORT: i32 = 1000;
   const GAP: i32 = 20;
@@ -237,14 +229,18 @@ mod tests {
 
   #[test]
   fn column_width_is_capped_at_viewport() {
-    assert_eq!(column_width_px(1.5, VIEWPORT, GAP), VIEWPORT);
-    assert_eq!(column_width_px(1.0, VIEWPORT, GAP), VIEWPORT);
+    let strip = ScrollingStrip::new(&[1.5, 1.0], VIEWPORT, GAP);
+
+    assert_eq!(strip.column(0), Some((0, VIEWPORT)));
+    assert_eq!(strip.column(1), Some((VIEWPORT + GAP, VIEWPORT)));
   }
 
   #[test]
   fn px_and_size_conversion_round_trips() {
     let size = column_size_from_px(490, VIEWPORT, GAP);
-    assert_eq!(column_width_px(size, VIEWPORT, GAP), 490);
+    let strip = ScrollingStrip::new(&[size], VIEWPORT, GAP);
+
+    assert_eq!(strip.column(0), Some((0, 490)));
   }
 
   #[test]
