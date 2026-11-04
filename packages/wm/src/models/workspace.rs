@@ -251,6 +251,43 @@ impl Workspace {
     Ok(())
   }
 
+  /// Evenly sizes the columns of the scrolling layout that are (at least
+  /// partially) within the viewport, such that they fill the viewport.
+  ///
+  /// Columns outside of the viewport keep their size.
+  pub fn balance_columns_in_view(&self) -> anyhow::Result<()> {
+    let strip = self.scrolling_strip()?;
+    let scroll_offset = self.scroll_offset();
+
+    let columns_in_view = self
+      .tiling_children()
+      .enumerate()
+      .filter(|(index, _)| strip.is_column_in_view(*index, scroll_offset))
+      .collect::<Vec<_>>();
+
+    let Some((first_index, _)) = columns_in_view.first() else {
+      return Ok(());
+    };
+
+    #[allow(clippy::cast_precision_loss)]
+    let column_size = 1.0 / columns_in_view.len() as f32;
+
+    for (_, column) in &columns_in_view {
+      column.set_tiling_size(column_size);
+    }
+
+    // Align the first balanced column with the left edge of the viewport,
+    // such that the balanced columns fill the viewport.
+    let (first_start, _) = self
+      .scrolling_strip()?
+      .column(*first_index)
+      .context("Column not found.")?;
+
+    self.0.borrow_mut().scroll_offset = first_start;
+
+    Ok(())
+  }
+
   /// Resets the scroll offset of the scrolling layout's viewport.
   pub fn reset_scroll_offset(&self) {
     self.0.borrow_mut().scroll_offset = 0;
@@ -494,5 +531,37 @@ mod tests {
     let rect = windows[2].to_rect().unwrap();
     assert_eq!(rect.x(), half_width);
     assert_eq!(rect.width(), half_width);
+  }
+
+  #[test]
+  fn balance_evenly_sizes_columns_in_view() {
+    let windows = [
+      TilingWindow::mock().tiling_size(0.5).call(),
+      TilingWindow::mock().tiling_size(0.5).call(),
+      TilingWindow::mock().tiling_size(0.5).call(),
+      TilingWindow::mock().tiling_size(0.5).call(),
+    ];
+
+    let workspace = Workspace::mock()
+      .layout_config(scrolling_layout())
+      .tiling_containers(windows.iter().cloned().map(Into::into).collect())
+      .call();
+
+    let _monitor =
+      Monitor::mock().workspaces(vec![workspace.clone()]).call();
+
+    // Centering column 1 cuts off columns 0 and 2 at the edges, and
+    // leaves column 3 out of view.
+    set_focused_descendant(&windows[1].clone().into(), None);
+    workspace.center_column(windows[1].id()).unwrap();
+    workspace.balance_columns_in_view().unwrap();
+
+    for window in &windows[..3] {
+      assert!((window.tiling_size() - 1.0 / 3.0).abs() < f32::EPSILON);
+      assert!(workspace.is_column_visible(window.id(), false, false));
+    }
+
+    assert!((windows[3].tiling_size() - 0.5).abs() < f32::EPSILON);
+    assert_eq!(workspace.scroll_offset(), 0);
   }
 }

@@ -12,6 +12,7 @@ use crate::{
     window::run_window_rules,
     workspace::sort_workspaces,
   },
+  models::clamp_column_size,
   traits::{
     CommonGetters, TilingDirectionGetters, TilingSizeGetters,
     WindowGetters,
@@ -190,10 +191,18 @@ fn update_workspace_layouts(
       }
 
       workspace.set_tiling_direction(TilingDirection::Horizontal);
-    }
+      workspace.reset_scroll_offset();
 
-    workspace.reset_scroll_offset();
-    balance_tiling_sizes(&workspace, state)?;
+      let column_size =
+        clamp_column_size(workspace.default_column_size()?);
+
+      for column in workspace.tiling_children() {
+        column.set_tiling_size(column_size);
+      }
+    } else {
+      workspace.reset_scroll_offset();
+      balance_tiling_sizes(&workspace, state)?;
+    }
   }
 
   Ok(())

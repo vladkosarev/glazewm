@@ -22,14 +22,21 @@ pub struct ScrollingStrip {
 impl ScrollingStrip {
   /// Creates a strip from column widths given as fractions of the
   /// viewport width.
+  ///
+  /// Column edges are rounded from their cumulative position, such that
+  /// columns whose sizes sum to 1 fill the viewport exactly.
+  #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
   pub fn new(column_sizes: &[f32], viewport_width: i32, gap: i32) -> Self {
+    let unit_width = (viewport_width + gap) as f32;
     let mut columns = Vec::with_capacity(column_sizes.len());
-    let mut next_start = 0;
+    let mut cumulative_size = 0.;
 
     for &size in column_sizes {
-      let width = column_width_px(size, viewport_width, gap);
-      columns.push((next_start, width));
-      next_start += width + gap;
+      let start = (cumulative_size * unit_width).round() as i32;
+      cumulative_size += clamp_column_size(size);
+      let end = (cumulative_size * unit_width).round() as i32 - gap;
+
+      columns.push((start, (end - start).max(1)));
     }
 
     Self {
@@ -66,16 +73,26 @@ impl ScrollingStrip {
   ) -> bool {
     self.column(index).is_some_and(|(start, width)| {
       let viewport_end = scroll_offset + self.viewport_width;
-
-      let is_in_view =
-        start < viewport_end && start + width > scroll_offset;
       let is_cut_off_left = start < scroll_offset - VISIBILITY_TOLERANCE;
       let is_cut_off_right =
         start + width > viewport_end + VISIBILITY_TOLERANCE;
 
-      is_in_view
+      self.is_column_in_view(index, scroll_offset)
         && (!is_cut_off_left || can_peek_left)
         && (!is_cut_off_right || can_peek_right)
+    })
+  }
+
+  /// Whether any part of the column at the given index is within the
+  /// viewport.
+  pub fn is_column_in_view(
+    &self,
+    index: usize,
+    scroll_offset: i32,
+  ) -> bool {
+    self.column(index).is_some_and(|(start, width)| {
+      start < scroll_offset + self.viewport_width
+        && start + width > scroll_offset
     })
   }
 
@@ -207,6 +224,15 @@ mod tests {
     assert_eq!(strip.column(0), Some((0, 490)));
     assert_eq!(strip.column(1), Some((510, 490)));
     assert_eq!(strip.width(), VIEWPORT);
+  }
+
+  #[test]
+  fn third_columns_fill_viewport_exactly() {
+    let strip =
+      ScrollingStrip::new(&[1. / 3., 1. / 3., 1. / 3.], 1001, GAP);
+
+    assert_eq!(strip.width(), 1001);
+    assert!(strip.is_column_visible(2, 0, false, false));
   }
 
   #[test]

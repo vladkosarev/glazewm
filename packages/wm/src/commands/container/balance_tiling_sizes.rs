@@ -1,5 +1,5 @@
 use crate::{
-  models::{clamp_column_size, Workspace},
+  models::Workspace,
   traits::{CommonGetters, TilingSizeGetters},
   wm_state::WmState,
 };
@@ -8,17 +8,14 @@ use crate::{
 /// that siblings within each direction container are evenly sized.
 ///
 /// Applies recursively to all nested split containers. In the scrolling
-/// layout, columns are instead reset to the default column width.
+/// layout, the columns within view are instead evenly sized to fill the
+/// viewport.
 pub fn balance_tiling_sizes(
   workspace: &Workspace,
   state: &mut WmState,
 ) -> anyhow::Result<()> {
   if workspace.is_scrolling() {
-    let column_size = clamp_column_size(workspace.default_column_size()?);
-
-    for column in workspace.tiling_children() {
-      column.set_tiling_size(column_size);
-    }
+    workspace.balance_columns_in_view()?;
   } else {
     reset_tiling_sizes(workspace);
   }
