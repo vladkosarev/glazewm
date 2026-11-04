@@ -1,3 +1,35 @@
+> [!IMPORTANT]
+> **This is a personal fork of [glzr-io/glazewm](https://github.com/glzr-io/glazewm).** The `feat/scrolling-layout` branch adds the following on top of upstream `main`:
+>
+> | Feature | Command / config | Default key (in my config) |
+> | --- | --- | --- |
+> | **Balance window sizes** – evenly resize windows on the workspace (fixes skewed sizes after resizing + moving windows). In the scrolling layout, evenly sizes the columns on screen. | `balance` | `alt+shift+b` |
+> | **Scrolling layout** (like [niri](https://github.com/YaLTeR/niri) / PaperWM) – windows are columns on a horizontal strip; the screen scrolls to follow focus. Columns cut off by the screen edge peek in, unless another monitor is on that side. | `layout: { type: "scrolling" }` | – |
+> | **Cycle column width** through preset widths (default 33% / 50% / 67%). | `cycle-column-width` | `alt+w` |
+> | **Center the focused column.** | `center-column` | `alt+c` |
+> | **Fit N columns per screen** – resize all columns so N fit on screen. | `set-columns-per-screen <n>` | `alt+ctrl+1` … `alt+ctrl+0` (= 10) |
+>
+> Full docs: [Config: Layout](#config-layout). Minimal config to enable it:
+>
+> ```yaml
+> layout:
+>   type: "scrolling"
+>   default_column_width: "50%"
+>   preset_column_widths: ["33%", "50%", "67%"]
+>   center_focused_column: "never" # or "always" / "on_overflow"
+> ```
+>
+> **Building (cross-compile from WSL/Linux, no Windows toolchain needed):**
+>
+> ```sh
+> sudo apt install mingw-w64
+> rustup target add x86_64-pc-windows-gnu
+> cargo build --release -p wm -p wm-cli --target x86_64-pc-windows-gnu
+> cargo test -p wm --target x86_64-pc-windows-gnu # runs via WSL interop
+> ```
+>
+> Then quit GlazeWM and replace `C:\Program Files\glzr.io\GlazeWM\glazewm.exe` with `target/x86_64-pc-windows-gnu/release/glazewm.exe`, and `...\GlazeWM\cli\glazewm.exe` with `glazewm-cli.exe` (needs admin; back up the originals first). This build doesn't have UIAccess (unsigned), so it may not be able to manage elevated windows.
+
 <div align="center">
 
 > V3 is finally out - check out the changelog [here](https://github.com/glzr-io/GlazeWM/releases) 🔥
