@@ -1,4 +1,4 @@
-use anyhow::Context;
+use anyhow::{bail, Context};
 use wm_common::{TilingDirection, WmEvent};
 
 use super::{flatten_split_container, wrap_in_split_container};
@@ -11,7 +11,7 @@ use crate::{
 
 /// Toggles the tiling direction of the container's direction container.
 ///
-/// Has no effect in the scrolling layout, which always arranges columns
+/// Errors in the scrolling layout, which always arranges columns
 /// horizontally.
 pub fn toggle_tiling_direction(
   container: Container,
@@ -22,7 +22,10 @@ pub fn toggle_tiling_direction(
     .workspace()
     .is_some_and(|workspace| workspace.is_scrolling())
   {
-    return Ok(());
+    bail!(
+      "Changing the tiling direction is not supported in the scrolling \
+       layout, since columns can't be split into stacks of windows."
+    );
   }
 
   let direction_container = match container {

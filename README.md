@@ -307,7 +307,7 @@ Existing commands behave as follows in the scrolling layout:
 - `focus --direction left|right` moves focus between columns.
 - `move --direction left|right` swaps the column with its neighbor; `up|down` moves the window to the monitor in that direction.
 - `resize --width` and `size --width` change the column width; height changes are ignored.
-- `toggle-tiling-direction` and `set-tiling-direction` have no effect.
+- `toggle-tiling-direction` and `set-tiling-direction` show an error, since columns can't be split into stacks of windows.
 - `balance` evenly sizes the columns that are on screen to fill the screen. In the tiling layout, it instead evenly sizes all windows on the workspace.
 
 Additional commands for the scrolling layout:
