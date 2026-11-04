@@ -6,7 +6,10 @@ use crate::{
   commands::container::{
     move_container_within_tree, replace_container, resize_tiling_container,
   },
-  models::{Container, InsertionTarget, WindowContainer},
+  models::{
+    clamp_column_size, Container, InsertionTarget, WindowContainer,
+    Workspace,
+  },
   traits::{CommonGetters, TilingSizeGetters, WindowGetters},
   user_config::UserConfig,
   wm_state::WmState,
@@ -96,8 +99,21 @@ fn set_tiling(
     state,
   )?;
 
+  let is_scrolling = target_parent
+    .as_workspace()
+    .is_some_and(Workspace::is_scrolling);
+
+  // Columns of the scrolling layout restore their previous width, or
+  // otherwise use the default width.
   #[allow(clippy::cast_precision_loss)]
-  if let Some(insertion_target) = &insertion_target {
+  if is_scrolling {
+    let column_size = match &insertion_target {
+      Some(insertion_target) => insertion_target.prev_tiling_size,
+      None => workspace.default_column_size()?,
+    };
+
+    tiling_window.set_tiling_size(clamp_column_size(column_size));
+  } else if let Some(insertion_target) = &insertion_target {
     let size_scale = (insertion_target.prev_sibling_count + 1) as f32
       / (tiling_window.tiling_siblings().count() + 1) as f32;
 

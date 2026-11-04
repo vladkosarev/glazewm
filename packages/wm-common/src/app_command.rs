@@ -157,7 +157,9 @@ pub enum SubscribableEvent {
 pub enum InvokeCommand {
   AdjustBorders(InvokeAdjustBordersCommand),
   Balance,
+  CenterColumn,
   Close,
+  CycleColumnWidth,
   Focus(InvokeFocusCommand),
   Ignore,
   Move(InvokeMoveCommand),

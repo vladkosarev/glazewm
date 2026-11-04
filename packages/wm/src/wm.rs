@@ -17,8 +17,9 @@ use wm_platform::{
 use crate::{
   commands::{
     container::{
-      balance_tiling_sizes, focus_container_by_id, focus_in_direction,
-      set_tiling_direction, toggle_tiling_direction,
+      balance_tiling_sizes, center_column, cycle_column_width,
+      focus_container_by_id, focus_in_direction, set_tiling_direction,
+      toggle_tiling_direction,
     },
     general::{
       cycle_focus, disable_binding_mode, enable_binding_mode,
@@ -254,8 +255,13 @@ impl WindowManager {
         let workspace =
           subject_container.workspace().context("No workspace.")?;
 
-        balance_tiling_sizes(&workspace, state);
-        Ok(())
+        balance_tiling_sizes(&workspace, state)
+      }
+      InvokeCommand::CenterColumn => {
+        center_column(&subject_container, state)
+      }
+      InvokeCommand::CycleColumnWidth => {
+        cycle_column_width(&subject_container, state)
       }
       InvokeCommand::Close => {
         match subject_container.as_window_container() {

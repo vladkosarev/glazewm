@@ -2,13 +2,14 @@ use anyhow::bail;
 
 use super::resize_tiling_container;
 use crate::{
-  models::Container,
+  models::{clamp_column_size, Container, Workspace},
   traits::{CommonGetters, TilingSizeGetters},
 };
 
 /// Inserts a child container at the specified index.
 ///
-/// The inserted child will be resized to fit the available space.
+/// The inserted child will be resized to fit the available space. In the
+/// scrolling layout, the child instead keeps its current column size.
 pub fn attach_container(
   child: &Container,
   target_parent: &Container,
@@ -38,6 +39,15 @@ pub fn attach_container(
 
   // Resize the child and its siblings if it is a tiling container.
   if let Ok(child) = child.as_tiling_container() {
+    // Columns of the scrolling layout are sized independently.
+    if target_parent
+      .as_workspace()
+      .is_some_and(Workspace::is_scrolling)
+    {
+      child.set_tiling_size(clamp_column_size(child.tiling_size()));
+      return Ok(());
+    }
+
     let tiling_siblings = child.tiling_siblings().collect::<Vec<_>>();
 
     if tiling_siblings.is_empty() {

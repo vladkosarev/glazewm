@@ -54,6 +54,20 @@ fn move_tiling_window(
   state: &mut WmState,
   config: &UserConfig,
 ) -> anyhow::Result<()> {
+  // The scrolling layout only has a single row of columns, so vertical
+  // moves go to the workspace in the given direction.
+  if window_to_move
+    .workspace()
+    .is_some_and(|workspace| workspace.is_scrolling())
+    && matches!(direction, Direction::Up | Direction::Down)
+  {
+    return move_to_workspace_in_direction(
+      &window_to_move.into(),
+      direction,
+      state,
+    );
+  }
+
   // Flatten the parent split container if it only contains the window.
   if let Some(split_parent) = window_to_move
     .parent()

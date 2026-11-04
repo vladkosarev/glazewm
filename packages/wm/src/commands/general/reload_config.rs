@@ -2,13 +2,20 @@ use anyhow::Context;
 use tracing::{info, warn};
 #[cfg(target_os = "windows")]
 use wm_common::{HideMethod, ParsedConfig};
-use wm_common::{WindowRuleEvent, WmEvent};
+use wm_common::{TilingDirection, WindowRuleEvent, WmEvent};
 #[cfg(target_os = "windows")]
 use wm_platform::NativeWindowWindowsExt;
 
 use crate::{
-  commands::{window::run_window_rules, workspace::sort_workspaces},
-  traits::{CommonGetters, TilingSizeGetters, WindowGetters},
+  commands::{
+    container::{balance_tiling_sizes, flatten_split_container},
+    window::run_window_rules,
+    workspace::sort_workspaces,
+  },
+  traits::{
+    CommonGetters, TilingDirectionGetters, TilingSizeGetters,
+    WindowGetters,
+  },
   user_config::UserConfig,
   wm::WindowManager,
   wm_state::WmState,
@@ -36,6 +43,8 @@ pub fn reload_config(
   update_workspace_configs(state, config)?;
 
   update_container_gaps(state, config);
+
+  update_workspace_layouts(state, config)?;
 
   #[cfg(target_os = "windows")]
   update_window_effects(&old_config, state, config)?;
@@ -153,6 +162,41 @@ fn update_container_gaps(state: &mut WmState, config: &UserConfig) {
   for workspace in state.workspaces() {
     workspace.set_gaps_config(config.value.gaps.clone());
   }
+}
+
+/// Updates the layout of active workspaces.
+///
+/// Switching to the scrolling layout flattens all split containers into a
+/// single row of columns with the default column width. Switching to the
+/// tiling layout evenly sizes the windows.
+fn update_workspace_layouts(
+  state: &mut WmState,
+  config: &UserConfig,
+) -> anyhow::Result<()> {
+  for workspace in state.workspaces() {
+    let was_scrolling = workspace.is_scrolling();
+    workspace.set_layout_config(config.value.layout.clone());
+
+    if was_scrolling == workspace.is_scrolling() {
+      continue;
+    }
+
+    if workspace.is_scrolling() {
+      while let Some(split_container) = workspace
+        .descendants()
+        .find_map(|container| container.as_split().cloned())
+      {
+        flatten_split_container(split_container)?;
+      }
+
+      workspace.set_tiling_direction(TilingDirection::Horizontal);
+    }
+
+    workspace.reset_scroll_offset();
+    balance_tiling_sizes(&workspace, state)?;
+  }
+
+  Ok(())
 }
 
 #[cfg(target_os = "windows")]

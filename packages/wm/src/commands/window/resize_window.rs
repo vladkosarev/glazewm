@@ -18,6 +18,16 @@ pub fn resize_window(
   let target_width = match width_delta {
     Some(delta) => {
       let parent_width = match window.as_tiling_container() {
+        // Column widths in the scrolling layout are relative to the
+        // workspace width.
+        Ok(tiling_window)
+          if tiling_window.scrolling_workspace().is_some() =>
+        {
+          tiling_window
+            .scrolling_workspace()
+            .and_then(|workspace| workspace.to_rect().ok())
+            .map(|rect| rect.width())
+        }
         Ok(tiling_window) => tiling_window
           .container_to_resize(true)?
           .and_then(|container| container.parent())

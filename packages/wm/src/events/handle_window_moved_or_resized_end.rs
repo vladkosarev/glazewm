@@ -12,7 +12,7 @@ use crate::{
   events::update_floating_window_position,
   models::{
     DirectionContainer, NonTilingWindow, SplitContainer, TilingContainer,
-    WindowContainer,
+    WindowContainer, Workspace,
   },
   traits::{
     CommonGetters, PositionGetters, TilingDirectionGetters, WindowGetters,
@@ -230,7 +230,13 @@ fn drop_as_tiling_window(
     config,
   )?;
 
+  // Columns of the scrolling layout can't be split.
+  let is_scrolling = target_parent
+    .as_workspace()
+    .is_some_and(Workspace::is_scrolling);
+
   let should_split = nearest_container.is_tiling_window()
+    && !is_scrolling
     && match tiling_direction {
       TilingDirection::Horizontal => {
         drop_position == DropPosition::Top

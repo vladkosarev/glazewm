@@ -12,7 +12,7 @@ use wm_platform::{CornerStyle, OpacityValue};
 use wm_platform::{Rect, WindowZOrder};
 
 use crate::{
-  models::{Container, WindowContainer},
+  models::{Container, WindowContainer, Workspace},
   traits::{CommonGetters, PositionGetters, WindowGetters},
   user_config::UserConfig,
   wm_state::WmState,
@@ -24,6 +24,8 @@ pub fn platform_sync(
 ) -> anyhow::Result<()> {
   let focused_container =
     state.focused_container().context("No focused container.")?;
+
+  sync_scroll_offsets(state)?;
 
   if state.pending_sync.needs_focus_update() {
     sync_focus(&focused_container, state)?;
@@ -74,6 +76,41 @@ pub fn platform_sync(
   }
 
   state.pending_sync.clear();
+
+  Ok(())
+}
+
+/// Updates the scroll offset of workspaces with the scrolling layout, such
+/// that the focused column is in view.
+///
+/// Queues all columns of a workspace for redraw if its scroll offset
+/// changed or any of its containers are pending redraw. This is because
+/// changes to one column can affect the position and visibility of the
+/// other columns.
+fn sync_scroll_offsets(state: &mut WmState) -> anyhow::Result<()> {
+  let scrolling_workspaces = state
+    .workspaces()
+    .into_iter()
+    .filter(Workspace::is_scrolling);
+
+  for workspace in scrolling_workspaces {
+    let has_offset_changed = workspace.sync_scroll_offset()?;
+
+    let has_pending_redraw =
+      state.pending_sync.containers_to_redraw().values().any(
+        |container| {
+          container
+            .workspace()
+            .is_some_and(|other| other.id() == workspace.id())
+        },
+      );
+
+    if has_offset_changed || has_pending_redraw {
+      state
+        .pending_sync
+        .queue_containers_to_redraw(workspace.tiling_children());
+    }
+  }
 
   Ok(())
 }
@@ -266,10 +303,19 @@ fn redraw_containers(
       continue;
     }
 
+    // Whether the window is a column that is scrolled out of view in the
+    // scrolling layout.
+    let is_scrolled_out = workspace.is_scrolling()
+      && window.is_tiling_window()
+      && !workspace.is_column_in_viewport(window.id());
+
     // Transition display state depending on whether window will be
     // shown or hidden.
     window.set_display_state(
-      match (window.display_state(), workspace.is_displayed()) {
+      match (
+        window.display_state(),
+        workspace.is_displayed() && !is_scrolled_out,
+      ) {
         (DisplayState::Hidden | DisplayState::Hiding, true) => {
           DisplayState::Showing
         }
@@ -285,9 +331,14 @@ fn redraw_containers(
       DisplayState::Showing | DisplayState::Shown
     );
 
-    if let Err(err) =
-      reposition_window(window, *hide_corner, &z_order, is_visible, config)
-    {
+    if let Err(err) = reposition_window(
+      window,
+      *hide_corner,
+      &z_order,
+      is_visible,
+      is_scrolled_out,
+      config,
+    ) {
       tracing::warn!("Failed to set window position: {}", err);
     }
 
@@ -342,6 +393,7 @@ fn reposition_window(
   #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
   z_order: &WindowZOrder,
   is_visible: bool,
+  is_scrolled_out: bool,
   config: &UserConfig,
 ) -> anyhow::Result<()> {
   let rect = window
@@ -380,6 +432,20 @@ fn reposition_window(
       frame.width(),
       frame.height(),
     ))?;
+
+    return Ok(());
+  }
+
+  // Hide windows that are scrolled out of view without repositioning
+  // them. Their position in the scrolling layout might otherwise overlap
+  // an adjacent monitor.
+  if is_scrolled_out {
+    #[cfg(target_os = "windows")]
+    if config.value.general.hide_method == HideMethod::Cloak {
+      window.native().set_cloaked(true)?;
+    } else {
+      window.native().hide()?;
+    }
 
     return Ok(());
   }

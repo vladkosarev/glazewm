@@ -16,6 +16,12 @@ macro_rules! impl_position_getters_as_resizable {
   ($struct_name:ident) => {
     impl PositionGetters for $struct_name {
       fn to_rect(&self) -> anyhow::Result<Rect> {
+        // Columns of the scrolling layout are positioned along a
+        // horizontally scrollable strip.
+        if let Some(workspace) = self.scrolling_workspace() {
+          return workspace.scrolling_column_rect(self.id());
+        }
+
         let parent = self
           .parent()
           .and_then(|parent| parent.as_direction_container().ok())

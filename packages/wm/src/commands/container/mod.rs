@@ -1,5 +1,7 @@
 mod attach_container;
 mod balance_tiling_sizes;
+mod center_column;
+mod cycle_column_width;
 mod detach_container;
 mod flatten_child_split_containers;
 mod flatten_split_container;
@@ -14,6 +16,8 @@ mod wrap_in_split_container;
 
 pub use attach_container::*;
 pub use balance_tiling_sizes::*;
+pub use center_column::*;
+pub use cycle_column_width::*;
 pub use detach_container::*;
 pub use flatten_child_split_containers::*;
 pub use flatten_split_container::*;

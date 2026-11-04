@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use wm_platform::{
-  Color, CornerStyle, Key, Keybinding, LengthValue, OpacityValue,
-  RectDelta,
+  Color, CornerStyle, Key, Keybinding, LengthUnit, LengthValue,
+  OpacityValue, RectDelta,
 };
 
 use crate::app_command::InvokeCommand;
@@ -13,6 +13,7 @@ pub struct ParsedConfig {
   pub gaps: GapsConfig,
   pub general: GeneralConfig,
   pub keybindings: Vec<KeybindingConfig>,
+  pub layout: LayoutConfig,
   pub window_behavior: WindowBehaviorConfig,
   pub window_effects: WindowEffectsConfig,
   pub window_rules: Vec<WindowRuleConfig>,
@@ -147,6 +148,67 @@ pub enum HideMethod {
   #[default]
   Cloak,
   PlaceInCorner,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(default, rename_all(serialize = "camelCase"))]
+pub struct LayoutConfig {
+  /// How tiling windows are arranged within a workspace.
+  #[serde(rename = "type")]
+  pub layout_type: LayoutType,
+
+  /// Width of newly tiled columns in the scrolling layout. Percentages
+  /// are relative to the workspace width.
+  pub default_column_width: LengthValue,
+
+  /// Widths to cycle between via the `cycle-column-width` command.
+  pub preset_column_widths: Vec<LengthValue>,
+
+  /// When to center the focused column in the scrolling layout.
+  pub center_focused_column: CenterFocusedColumn,
+}
+
+impl Default for LayoutConfig {
+  fn default() -> Self {
+    LayoutConfig {
+      layout_type: LayoutType::Tiling,
+      default_column_width: LengthValue {
+        amount: 0.5,
+        unit: LengthUnit::Percentage,
+      },
+      preset_column_widths: [1. / 3., 0.5, 2. / 3.]
+        .into_iter()
+        .map(|amount| LengthValue {
+          amount,
+          unit: LengthUnit::Percentage,
+        })
+        .collect(),
+      center_focused_column: CenterFocusedColumn::Never,
+    }
+  }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LayoutType {
+  /// Windows are tiled to fill the workspace.
+  #[default]
+  Tiling,
+  /// Windows are arranged as columns on a horizontally scrollable strip.
+  Scrolling,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CenterFocusedColumn {
+  /// Scroll the minimum amount needed to show the focused column.
+  #[default]
+  Never,
+  /// Always center the focused column.
+  Always,
+  /// Center the focused column if it doesn't fit on screen together with
+  /// the previously focused column.
+  OnOverflow,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

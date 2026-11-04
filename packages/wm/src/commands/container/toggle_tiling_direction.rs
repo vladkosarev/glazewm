@@ -9,11 +9,22 @@ use crate::{
   wm_state::WmState,
 };
 
+/// Toggles the tiling direction of the container's direction container.
+///
+/// Has no effect in the scrolling layout, which always arranges columns
+/// horizontally.
 pub fn toggle_tiling_direction(
   container: Container,
   state: &mut WmState,
   config: &UserConfig,
 ) -> anyhow::Result<()> {
+  if container
+    .workspace()
+    .is_some_and(|workspace| workspace.is_scrolling())
+  {
+    return Ok(());
+  }
+
   let direction_container = match container {
     Container::TilingWindow(tiling_window) => {
       toggle_window_direction(tiling_window, config)

@@ -9,10 +9,12 @@ use crate::{
     window::run_window_rules,
   },
   models::{
-    Container, Monitor, NativeWindowProperties, NonTilingWindow,
-    TilingWindow, WindowContainer,
+    clamp_column_size, Container, Monitor, NativeWindowProperties,
+    NonTilingWindow, TilingWindow, WindowContainer,
   },
-  traits::{CommonGetters, PositionGetters, WindowGetters},
+  traits::{
+    CommonGetters, PositionGetters, TilingSizeGetters, WindowGetters,
+  },
   user_config::UserConfig,
   wm_state::WmState,
 };
@@ -247,6 +249,18 @@ fn create_window(
     &target_parent,
     Some(target_index),
   )?;
+
+  // Size new columns of the scrolling layout to the default width.
+  if let WindowContainer::TilingWindow(tiling_window) = &window_container {
+    if let Some(workspace) = target_parent
+      .as_workspace()
+      .filter(|workspace| workspace.is_scrolling())
+    {
+      tiling_window.set_tiling_size(clamp_column_size(
+        workspace.default_column_size()?,
+      ));
+    }
+  }
 
   // The OS might spawn the window on a different monitor to the target
   // parent, so adjustments might need to be made because of DPI.

@@ -2,14 +2,15 @@ use anyhow::Context;
 
 use super::flatten_split_container;
 use crate::{
-  models::Container,
+  models::{Container, Workspace},
   traits::{CommonGetters, TilingSizeGetters, MIN_TILING_SIZE},
 };
 
 /// Removes a container from the tree.
 ///
 /// If the container is a tiling container, the siblings will be resized to
-/// fill the freed up space. Will flatten empty parent split containers.
+/// fill the freed up space (except in the scrolling layout, where columns
+/// are sized independently). Will flatten empty parent split containers.
 #[allow(clippy::needless_pass_by_value)]
 pub fn detach_container(child_to_remove: Container) -> anyhow::Result<()> {
   // Flatten the parent split container if it'll be empty after removing
@@ -34,6 +35,11 @@ pub fn detach_container(child_to_remove: Container) -> anyhow::Result<()> {
     .retain(|id| *id != child_to_remove.id());
 
   *child_to_remove.borrow_parent_mut() = None;
+
+  // Columns of the scrolling layout are sized independently.
+  if parent.as_workspace().is_some_and(Workspace::is_scrolling) {
+    return Ok(());
+  }
 
   // Resize the siblings if it is a tiling container.
   if let Ok(child_to_remove) = child_to_remove.as_tiling_container() {

@@ -5,7 +5,9 @@ use anyhow::Context;
 use wm_common::{GapsConfig, TilingDirection};
 
 use super::{CommonGetters, TilingDirectionGetters};
-use crate::models::{Container, DirectionContainer, TilingContainer};
+use crate::models::{
+  Container, DirectionContainer, TilingContainer, Workspace,
+};
 
 pub const MIN_TILING_SIZE: f32 = 0.01;
 
@@ -41,11 +43,30 @@ pub trait TilingSizeGetters: CommonGetters {
     ))
   }
 
+  /// Gets the parent workspace if this container is a column of the
+  /// scrolling layout.
+  fn scrolling_workspace(&self) -> Option<Workspace> {
+    self
+      .parent()
+      .and_then(|parent| parent.as_workspace().cloned())
+      .filter(Workspace::is_scrolling)
+  }
+
   /// Gets the container to resize when resizing a tiling window.
+  ///
+  /// In the scrolling layout, only the width of a column can be resized.
   fn container_to_resize(
     &self,
     is_width_resize: bool,
   ) -> anyhow::Result<Option<TilingContainer>> {
+    if self.scrolling_workspace().is_some() {
+      return Ok(if is_width_resize {
+        Some(self.as_tiling_container()?)
+      } else {
+        None
+      });
+    }
+
     let parent = self.direction_container().context("No parent.")?;
 
     let tiling_direction = parent.tiling_direction();
