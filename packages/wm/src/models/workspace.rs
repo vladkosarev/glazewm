@@ -2,6 +2,7 @@ use std::{
   cell::{Ref, RefCell, RefMut},
   collections::VecDeque,
   rc::Rc,
+  time::{Duration, Instant},
 };
 
 use anyhow::Context;
@@ -17,7 +18,7 @@ use crate::{
   impl_tiling_direction_getters,
   models::{
     clamp_column_size, column_size_from_px, Container, DirectionContainer,
-    ScrollingStrip, TilingContainer, WindowContainer,
+    ScrollAnimation, ScrollingStrip, TilingContainer, WindowContainer,
   },
   traits::{
     CommonGetters, PositionGetters, TilingDirectionGetters,
@@ -40,8 +41,16 @@ struct WorkspaceInner {
   tiling_direction: TilingDirection,
 
   /// Horizontal scroll offset (in pixels) of the viewport when using the
-  /// scrolling layout.
+  /// scrolling layout. This is the target offset when animating.
   scroll_offset: i32,
+
+  /// Scroll offset that was last committed to be displayed (see
+  /// `Workspace::commit_scroll_offset`).
+  committed_scroll_offset: i32,
+
+  /// In-progress animation of the scroll offset, along with the current
+  /// (i.e. displayed) offset of the animation.
+  scroll_animation: Option<(ScrollAnimation, i32)>,
 }
 
 impl Workspace {
@@ -67,6 +76,8 @@ impl Workspace {
       layout_config,
       tiling_direction,
       scroll_offset: 0,
+      committed_scroll_offset: 0,
+      scroll_animation: None,
     };
 
     Self(Rc::new(RefCell::new(workspace)))
@@ -114,8 +125,84 @@ impl Workspace {
 
   /// Horizontal scroll offset (in pixels) of the scrolling layout's
   /// viewport.
+  ///
+  /// While animating, this is the target offset of the animation.
   pub fn scroll_offset(&self) -> i32 {
     self.0.borrow().scroll_offset
+  }
+
+  /// Scroll offset that windows are currently displayed at.
+  ///
+  /// Lags behind `scroll_offset` until the scroll offset is committed via
+  /// `commit_scroll_offset`, and while a scroll animation is in progress.
+  pub fn displayed_scroll_offset(&self) -> i32 {
+    let inner = self.0.borrow();
+
+    inner
+      .scroll_animation
+      .as_ref()
+      .map_or(inner.committed_scroll_offset, |(_, offset)| *offset)
+  }
+
+  /// Commits the scroll offset to be displayed.
+  ///
+  /// If an animation is given as a start time and duration, the change is
+  /// animated from the currently displayed scroll offset (replacing any
+  /// in-progress animation). Otherwise, the change is applied immediately.
+  ///
+  /// Returns whether the scroll offset changed since the last commit.
+  pub fn commit_scroll_offset(
+    &self,
+    animation: Option<(Instant, Duration)>,
+  ) -> bool {
+    let from = self.displayed_scroll_offset();
+    let mut inner = self.0.borrow_mut();
+    let to = inner.scroll_offset;
+
+    if to == inner.committed_scroll_offset {
+      return false;
+    }
+
+    inner.committed_scroll_offset = to;
+    inner.scroll_animation =
+      animation.filter(|_| from != to).map(|(start, duration)| {
+        (ScrollAnimation::new(from, to, start, duration), from)
+      });
+
+    true
+  }
+
+  /// Whether the scroll offset is currently being animated.
+  pub fn has_scroll_animation(&self) -> bool {
+    self.0.borrow().scroll_animation.is_some()
+  }
+
+  /// Advances the scroll animation to the given time.
+  ///
+  /// Returns `false` once the animation has finished (or if there is no
+  /// animation), in which case windows are displayed at the committed
+  /// scroll offset.
+  pub fn step_scroll_animation(&self, now: Instant) -> bool {
+    let mut inner = self.0.borrow_mut();
+
+    let Some((animation, displayed_offset)) = &mut inner.scroll_animation
+    else {
+      return false;
+    };
+
+    if animation.is_finished_at(now) {
+      inner.scroll_animation = None;
+      return false;
+    }
+
+    *displayed_offset = animation.offset_at(now);
+    true
+  }
+
+  /// Stops any in-progress scroll animation, such that windows are
+  /// displayed at the committed scroll offset.
+  pub fn stop_scroll_animation(&self) {
+    self.0.borrow_mut().scroll_animation = None;
   }
 
   /// Gap (in pixels) between adjacent columns.
@@ -158,7 +245,7 @@ impl Workspace {
   }
 
   /// Gets the rect of a column in the scrolling layout, taking into
-  /// account the scroll offset.
+  /// account the displayed scroll offset.
   ///
   /// The rect can be outside of the workspace bounds if the column is
   /// scrolled out of view.
@@ -174,7 +261,7 @@ impl Workspace {
       .context("Container is not a column of the workspace.")?;
 
     Ok(Rect::from_xy(
-      workspace_rect.x() + start - self.scroll_offset(),
+      workspace_rect.x() + start - self.displayed_scroll_offset(),
       workspace_rect.y(),
       width,
       workspace_rect.height(),
@@ -195,7 +282,7 @@ impl Workspace {
       self.scrolling_strip().is_ok_and(|strip| {
         strip.is_column_visible(
           index,
-          self.scroll_offset(),
+          self.displayed_scroll_offset(),
           can_peek_left,
           can_peek_right,
         )
@@ -496,6 +583,8 @@ impl std::fmt::Display for Workspace {
 
 #[cfg(test)]
 mod tests {
+  use std::time::{Duration, Instant};
+
   use wm_common::{LayoutConfig, LayoutType};
 
   use crate::{
@@ -556,6 +645,7 @@ mod tests {
     // Initially, the first two columns fill the viewport.
     set_focused_descendant(&windows[0].clone().into(), None);
     assert!(!workspace.sync_scroll_offset().unwrap());
+    assert!(!workspace.commit_scroll_offset(None));
     assert!(workspace.is_column_visible(windows[1].id(), false, false));
     assert!(!workspace.is_column_visible(windows[2].id(), true, true));
 
@@ -563,6 +653,11 @@ mod tests {
     set_focused_descendant(&windows[2].clone().into(), None);
     assert!(workspace.sync_scroll_offset().unwrap());
     assert_eq!(workspace.scroll_offset(), half_width);
+
+    // Columns are displayed at the previous offset until committed.
+    assert!(workspace.is_column_visible(windows[0].id(), false, false));
+    assert!(workspace.commit_scroll_offset(None));
+
     assert!(!workspace.is_column_visible(windows[0].id(), true, true));
     assert!(workspace.is_column_visible(windows[2].id(), false, false));
 
@@ -593,6 +688,7 @@ mod tests {
     set_focused_descendant(&windows[1].clone().into(), None);
     workspace.center_column(windows[1].id()).unwrap();
     workspace.balance_columns_in_view().unwrap();
+    workspace.commit_scroll_offset(None);
 
     for window in &windows[..3] {
       assert!((window.tiling_size() - 1.0 / 3.0).abs() < f32::EPSILON);
@@ -625,6 +721,7 @@ mod tests {
     workspace.sync_scroll_offset().unwrap();
 
     workspace.set_columns_per_screen(3).unwrap();
+    workspace.commit_scroll_offset(None);
 
     for window in &windows {
       assert!((window.tiling_size() - 1.0 / 3.0).abs() < f32::EPSILON);
@@ -637,5 +734,46 @@ mod tests {
     for window in &windows[1..] {
       assert!(workspace.is_column_visible(window.id(), false, false));
     }
+  }
+
+  #[test]
+  fn scroll_animation_moves_displayed_offset_towards_target() {
+    let windows = [
+      TilingWindow::mock().tiling_size(0.5).call(),
+      TilingWindow::mock().tiling_size(0.5).call(),
+      TilingWindow::mock().tiling_size(0.5).call(),
+    ];
+
+    let workspace = Workspace::mock()
+      .layout_config(scrolling_layout())
+      .tiling_containers(windows.iter().cloned().map(Into::into).collect())
+      .call();
+
+    let _monitor =
+      Monitor::mock().workspaces(vec![workspace.clone()]).call();
+
+    set_focused_descendant(&windows[2].clone().into(), None);
+    workspace.sync_scroll_offset().unwrap();
+
+    let start = Instant::now();
+    let duration = Duration::from_millis(100);
+    let target = workspace.scroll_offset();
+    assert!(workspace.commit_scroll_offset(Some((start, duration))));
+    assert!(!workspace.commit_scroll_offset(Some((start, duration))));
+
+    // Columns are displayed at the start offset until the first frame.
+    assert_eq!(workspace.displayed_scroll_offset(), 0);
+    assert_eq!(windows[0].to_rect().unwrap().x(), 0);
+
+    assert!(
+      workspace.step_scroll_animation(start + Duration::from_millis(50))
+    );
+    let midway = workspace.displayed_scroll_offset();
+    assert!(midway > 0 && midway < target);
+
+    // Once finished, columns are displayed at the target offset.
+    assert!(!workspace.step_scroll_animation(start + duration));
+    assert!(!workspace.has_scroll_animation());
+    assert_eq!(workspace.displayed_scroll_offset(), target);
   }
 }

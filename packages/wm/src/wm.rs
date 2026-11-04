@@ -23,7 +23,8 @@ use crate::{
     },
     general::{
       cycle_focus, disable_binding_mode, enable_binding_mode,
-      platform_sync, reload_config, shell_exec, toggle_pause,
+      platform_sync, reload_config, shell_exec, step_scroll_animations,
+      toggle_pause,
     },
     monitor::focus_monitor,
     window::{
@@ -44,7 +45,7 @@ use crate::{
     handle_window_title_changed,
   },
   ipc_server::IpcServer,
-  models::{Container, WorkspaceTarget},
+  models::{Container, Workspace, WorkspaceTarget},
   traits::{CommonGetters, WindowGetters},
   user_config::UserConfig,
   wm_state::WmState,
@@ -72,6 +73,23 @@ impl WindowManager {
       exit_rx,
       state,
     })
+  }
+
+  /// Whether any workspace has an in-progress scroll animation.
+  pub fn has_scroll_animations(&self) -> bool {
+    self
+      .state
+      .workspaces()
+      .iter()
+      .any(Workspace::has_scroll_animation)
+  }
+
+  /// Advances in-progress scroll animations by a frame.
+  pub fn step_scroll_animations(
+    &mut self,
+    config: &UserConfig,
+  ) -> anyhow::Result<()> {
+    step_scroll_animations(&mut self.state, config)
   }
 
   pub fn process_event(

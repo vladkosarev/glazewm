@@ -78,6 +78,11 @@ layout:
   #   together with the previously focused column.
   center_focused_column: 'never'
 
+  # (Scrolling layout) Duration of the scroll animation in milliseconds.
+  # Set to 0 to disable. Experimental: some applications may not redraw
+  # smoothly while being animated.
+  scroll_animation_ms: 0
+
 window_effects:
   # Visual effects to apply to the focused window.
   focused_window:

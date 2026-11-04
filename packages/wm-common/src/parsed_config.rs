@@ -166,6 +166,10 @@ pub struct LayoutConfig {
 
   /// When to center the focused column in the scrolling layout.
   pub center_focused_column: CenterFocusedColumn,
+
+  /// Duration (in milliseconds) of the scroll animation in the scrolling
+  /// layout. Set to 0 to disable animations.
+  pub scroll_animation_ms: u32,
 }
 
 impl Default for LayoutConfig {
@@ -184,6 +188,7 @@ impl Default for LayoutConfig {
         })
         .collect(),
       center_focused_column: CenterFocusedColumn::Never,
+      scroll_animation_ms: 0,
     }
   }
 }

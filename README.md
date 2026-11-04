@@ -7,6 +7,7 @@
 > | **Scrolling layout** (like [niri](https://github.com/YaLTeR/niri) / PaperWM) – windows are columns on a horizontal strip; the screen scrolls to follow focus. Columns cut off by the screen edge peek in, unless another monitor is on that side. | `layout: { type: "scrolling" }` | – |
 > | **Cycle column width** through preset widths (default 33% / 50% / 67%). | `cycle-column-width` | `alt+w` |
 > | **Center the focused column.** | `center-column` | `alt+c` |
+> | **Scroll animation** (experimental) – columns slide instead of jumping when the screen scrolls. | `layout: { scroll_animation_ms: 150 }` | – |
 > | **Fit N columns per screen** – resize all columns so N fit on screen. | `set-columns-per-screen <n>` | `alt+ctrl+1` … `alt+ctrl+0` (= 10) |
 >
 > Full docs: [Config: Layout](#config-layout). Minimal config to enable it:
@@ -291,6 +292,11 @@ layout:
   # - "on_overflow": Center the column if it doesn't fit on screen
   #   together with the previously focused column.
   center_focused_column: "never"
+
+  # (Scrolling layout) Duration of the scroll animation in milliseconds.
+  # Set to 0 to disable. Experimental: some applications may not redraw
+  # smoothly while being animated.
+  scroll_animation_ms: 0
 ```
 
 In the scrolling layout, the viewport follows the focused column. Columns cut off by the screen edge are partially shown, unless another monitor is adjacent on that side, in which case they are hidden. Columns entirely outside of the screen are hidden.

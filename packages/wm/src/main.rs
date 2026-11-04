@@ -30,8 +30,8 @@ use wm_platform::{
 };
 
 use crate::{
-  ipc_server::IpcServer, sys_tray::SystemTray, user_config::UserConfig,
-  wm::WindowManager,
+  ipc_server::IpcServer, models::SCROLL_ANIMATION_FRAME_INTERVAL,
+  sys_tray::SystemTray, user_config::UserConfig, wm::WindowManager,
 };
 
 mod commands;
@@ -184,6 +184,13 @@ async fn start_wm(
   cleanup_interval
     .set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+  // Create an interval for advancing scroll animations. Only polled while
+  // an animation is in progress.
+  let mut animation_interval =
+    tokio::time::interval(SCROLL_ANIMATION_FRAME_INTERVAL);
+  animation_interval
+    .set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
   loop {
     let res = tokio::select! {
       _ = signal::ctrl_c() => {
@@ -214,6 +221,9 @@ async fn start_wm(
         tracing::debug!("Received keyboard event: {:?}", event);
         wm.process_event(PlatformEvent::Keybinding(event), &mut config)
       }
+      _ = animation_interval.tick(), if wm.has_scroll_animations() => {
+        wm.step_scroll_animations(&config)
+      },
       _ = cleanup_interval.tick() => {
         if wm.state.is_paused {
           Ok(())

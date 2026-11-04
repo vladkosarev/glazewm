@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use anyhow::Context;
 #[cfg(target_os = "windows")]
 use wm_common::WindowEffectConfig;
@@ -25,7 +27,7 @@ pub fn platform_sync(
   let focused_container =
     state.focused_container().context("No focused container.")?;
 
-  sync_scroll_offsets(state)?;
+  sync_scroll_offsets(state, config)?;
 
   if state.pending_sync.needs_focus_update() {
     sync_focus(&focused_container, state)?;
@@ -83,18 +85,38 @@ pub fn platform_sync(
 /// Updates the scroll offset of workspaces with the scrolling layout, such
 /// that the focused column is in view.
 ///
-/// Queues all columns of a workspace for redraw if its scroll offset
-/// changed or any of its containers are pending redraw. This is because
-/// changes to one column can affect the position and visibility of the
-/// other columns.
-fn sync_scroll_offsets(state: &mut WmState) -> anyhow::Result<()> {
+/// Changes to the scroll offset of displayed workspaces are animated if
+/// enabled, in which case the columns get redrawn on each animation frame
+/// (see `step_scroll_animations`).
+///
+/// Otherwise, queues all columns of a workspace for redraw if its scroll
+/// offset changed or any of its containers are pending redraw. This is
+/// because changes to one column can affect the position and visibility
+/// of the other columns.
+fn sync_scroll_offsets(
+  state: &mut WmState,
+  config: &UserConfig,
+) -> anyhow::Result<()> {
+  let animation_duration =
+    Duration::from_millis(config.value.layout.scroll_animation_ms.into());
+
   let scrolling_workspaces = state
     .workspaces()
     .into_iter()
     .filter(Workspace::is_scrolling);
 
   for workspace in scrolling_workspaces {
-    let has_offset_changed = workspace.sync_scroll_offset()?;
+    workspace.sync_scroll_offset()?;
+
+    let animation = (!animation_duration.is_zero()
+      && workspace.is_displayed())
+    .then(|| (Instant::now(), animation_duration));
+
+    let has_offset_changed = workspace.commit_scroll_offset(animation);
+
+    if workspace.has_scroll_animation() {
+      continue;
+    }
 
     let has_pending_redraw =
       state.pending_sync.containers_to_redraw().values().any(
@@ -111,6 +133,125 @@ fn sync_scroll_offsets(state: &mut WmState) -> anyhow::Result<()> {
         .queue_containers_to_redraw(workspace.tiling_children());
     }
   }
+
+  Ok(())
+}
+
+/// Advances in-progress scroll animations by a frame.
+///
+/// Columns that stay visible are moved without being resized, which lets
+/// the OS keep their contents instead of repainting them on every frame.
+/// Columns that are scrolled into or out of view are redrawn in full, as
+/// are all columns once the animation finishes.
+pub fn step_scroll_animations(
+  state: &mut WmState,
+  config: &UserConfig,
+) -> anyhow::Result<()> {
+  let now = Instant::now();
+
+  let animating_workspaces = state
+    .workspaces()
+    .into_iter()
+    .filter(Workspace::has_scroll_animation);
+
+  for workspace in animating_workspaces {
+    let columns = workspace
+      .tiling_children()
+      .filter_map(|column| column.as_window_container().ok())
+      .collect::<Vec<_>>();
+
+    // Redraw all columns at their final position once finished.
+    if state.is_paused
+      || !workspace.is_displayed()
+      || !workspace.step_scroll_animation(now)
+    {
+      workspace.stop_scroll_animation();
+      state.pending_sync.queue_containers_to_redraw(columns);
+      continue;
+    }
+
+    for column in columns {
+      let is_shown = matches!(
+        column.display_state(),
+        DisplayState::Shown | DisplayState::Showing
+      );
+
+      if is_shown == is_scrolled_out(&column, &workspace, state)? {
+        state.pending_sync.queue_container_to_redraw(column);
+      } else if is_shown {
+        if let Err(err) = move_window_without_redraw(&column) {
+          tracing::warn!("Failed to move window: {}", err);
+        }
+      }
+    }
+  }
+
+  if !state.is_paused && state.pending_sync.has_changes() {
+    platform_sync(state, config)?;
+  }
+
+  Ok(())
+}
+
+/// Whether the window is a column that is scrolled out of view in the
+/// scrolling layout.
+///
+/// Columns that are cut off by the screen edge are shown, unless they
+/// would overlap an adjacent monitor.
+fn is_scrolled_out(
+  window: &WindowContainer,
+  workspace: &Workspace,
+  state: &WmState,
+) -> anyhow::Result<bool> {
+  if !workspace.is_scrolling() || !window.is_tiling_window() {
+    return Ok(false);
+  }
+
+  let monitor = workspace.monitor().context("No monitor.")?;
+
+  Ok(
+    !workspace.is_column_visible(
+      window.id(),
+      state
+        .monitor_in_direction(&monitor, &Direction::Left)?
+        .is_none(),
+      state
+        .monitor_in_direction(&monitor, &Direction::Right)?
+        .is_none(),
+    ),
+  )
+}
+
+/// Moves a window to its current position without resizing it. The OS
+/// keeps the window's contents instead of repainting them, which makes
+/// this suitable for animation frames.
+fn move_window_without_redraw(
+  window: &WindowContainer,
+) -> anyhow::Result<()> {
+  let rect = window
+    .to_rect()?
+    .apply_delta(&window.total_border_delta()?, None);
+
+  #[cfg(target_os = "windows")]
+  {
+    use wm_platform::{
+      SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOSENDCHANGING, SWP_NOSIZE,
+      SWP_NOZORDER,
+    };
+
+    window.native().set_window_pos(
+      &WindowZOrder::Normal,
+      &rect,
+      SWP_NOACTIVATE
+        | SWP_NOZORDER
+        | SWP_NOSIZE
+        | SWP_NOSENDCHANGING
+        | SWP_ASYNCWINDOWPOS,
+    )?;
+  }
+
+  #[cfg(target_os = "macos")]
+  window.native().reposition(rect.x(), rect.y())?;
 
   Ok(())
 }
@@ -303,20 +444,7 @@ fn redraw_containers(
       continue;
     }
 
-    // Whether the window is a column that is scrolled out of view in the
-    // scrolling layout. Columns that are cut off by the screen edge are
-    // shown, unless they would overlap an adjacent monitor.
-    let is_scrolled_out = workspace.is_scrolling()
-      && window.is_tiling_window()
-      && !workspace.is_column_visible(
-        window.id(),
-        state
-          .monitor_in_direction(&monitor, &Direction::Left)?
-          .is_none(),
-        state
-          .monitor_in_direction(&monitor, &Direction::Right)?
-          .is_none(),
-      );
+    let is_scrolled_out = is_scrolled_out(window, &workspace, state)?;
 
     // Transition display state depending on whether window will be
     // shown or hidden.
