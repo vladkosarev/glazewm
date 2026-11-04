@@ -59,7 +59,8 @@ layout:
   # - 'tiling': Windows are tiled to fill the workspace.
   # - 'scrolling': Windows are arranged as columns on a horizontally
   #   scrollable strip. Columns outside of the screen are hidden, and are
-  #   scrolled into view when focused.
+  #   scrolled into view when focused. Related commands:
+  #   `cycle-column-width`, `center-column`, `set-columns-per-screen <n>`.
   type: 'tiling'
 
   # (Scrolling layout) Width of newly tiled columns. Percentages are

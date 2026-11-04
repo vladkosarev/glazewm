@@ -238,6 +238,10 @@ pub enum InvokeCommand {
     #[clap(required = true)]
     tiling_direction: TilingDirection,
   },
+  SetColumnsPerScreen {
+    #[clap(required = true, value_parser = clap::value_parser!(u32).range(1..))]
+    count: u32,
+  },
   WmCycleFocus {
     #[clap(long, default_value_t = false)]
     omit_floating: bool,

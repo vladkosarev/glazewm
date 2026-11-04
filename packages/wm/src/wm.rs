@@ -18,8 +18,8 @@ use crate::{
   commands::{
     container::{
       balance_tiling_sizes, center_column, cycle_column_width,
-      focus_container_by_id, focus_in_direction, set_tiling_direction,
-      toggle_tiling_direction,
+      focus_container_by_id, focus_in_direction, set_columns_per_screen,
+      set_tiling_direction, toggle_tiling_direction,
     },
     general::{
       cycle_focus, disable_binding_mode, enable_binding_mode,
@@ -747,6 +747,9 @@ impl WindowManager {
       }
       InvokeCommand::ToggleTilingDirection => {
         toggle_tiling_direction(subject_container, state, config)
+      }
+      InvokeCommand::SetColumnsPerScreen { count } => {
+        set_columns_per_screen(&subject_container, *count, state)
       }
       InvokeCommand::SetTilingDirection { tiling_direction } => {
         set_tiling_direction(

@@ -16,8 +16,8 @@ use crate::{
   impl_common_getters, impl_container_debug,
   impl_tiling_direction_getters,
   models::{
-    column_size_from_px, Container, DirectionContainer, ScrollingStrip,
-    TilingContainer, WindowContainer,
+    clamp_column_size, column_size_from_px, Container, DirectionContainer,
+    ScrollingStrip, TilingContainer, WindowContainer,
   },
   traits::{
     CommonGetters, PositionGetters, TilingDirectionGetters,
@@ -251,39 +251,77 @@ impl Workspace {
     Ok(())
   }
 
+  /// Indices of the columns of the scrolling layout that are (at least
+  /// partially) within the viewport.
+  fn column_indices_in_view(&self) -> anyhow::Result<Vec<usize>> {
+    let strip = self.scrolling_strip()?;
+    let scroll_offset = self.scroll_offset();
+
+    Ok(
+      (0..self.tiling_children().count())
+        .filter(|&index| strip.is_column_in_view(index, scroll_offset))
+        .collect(),
+    )
+  }
+
   /// Evenly sizes the columns of the scrolling layout that are (at least
   /// partially) within the viewport, such that they fill the viewport.
   ///
   /// Columns outside of the viewport keep their size.
   pub fn balance_columns_in_view(&self) -> anyhow::Result<()> {
-    let strip = self.scrolling_strip()?;
-    let scroll_offset = self.scroll_offset();
+    let indices_in_view = self.column_indices_in_view()?;
 
-    let columns_in_view = self
-      .tiling_children()
-      .enumerate()
-      .filter(|(index, _)| strip.is_column_in_view(*index, scroll_offset))
-      .collect::<Vec<_>>();
-
-    let Some((first_index, _)) = columns_in_view.first() else {
+    let Some(&first_index) = indices_in_view.first() else {
       return Ok(());
     };
 
     #[allow(clippy::cast_precision_loss)]
-    let column_size = 1.0 / columns_in_view.len() as f32;
+    let column_size = 1.0 / indices_in_view.len() as f32;
 
-    for (_, column) in &columns_in_view {
-      column.set_tiling_size(column_size);
+    self.resize_columns_and_align(
+      |index| indices_in_view.contains(&index),
+      column_size,
+      first_index,
+    )
+  }
+
+  /// Sizes all columns of the scrolling layout such that the given number
+  /// of columns fill the viewport.
+  ///
+  /// The first column that is currently within the viewport is aligned
+  /// with the left edge of the viewport.
+  pub fn set_columns_per_screen(&self, count: u32) -> anyhow::Result<()> {
+    let align_index =
+      self.column_indices_in_view()?.first().copied().unwrap_or(0);
+
+    #[allow(clippy::cast_precision_loss)]
+    let column_size = 1.0 / count.max(1) as f32;
+
+    self.resize_columns_and_align(|_| true, column_size, align_index)
+  }
+
+  /// Sets the size of the columns whose index matches the predicate, and
+  /// then scrolls the viewport such that the column at `align_index` is at
+  /// its left edge.
+  fn resize_columns_and_align(
+    &self,
+    should_resize: impl Fn(usize) -> bool,
+    column_size: f32,
+    align_index: usize,
+  ) -> anyhow::Result<()> {
+    for (_, column) in self
+      .tiling_children()
+      .enumerate()
+      .filter(|(index, _)| should_resize(*index))
+    {
+      column.set_tiling_size(clamp_column_size(column_size));
     }
 
-    // Align the first balanced column with the left edge of the viewport,
-    // such that the balanced columns fill the viewport.
-    let (first_start, _) = self
-      .scrolling_strip()?
-      .column(*first_index)
-      .context("Column not found.")?;
+    let strip = self.scrolling_strip()?;
 
-    self.0.borrow_mut().scroll_offset = first_start;
+    if let Some((start, _)) = strip.column(align_index) {
+      self.0.borrow_mut().scroll_offset = strip.clamp_offset(start);
+    }
 
     Ok(())
   }
@@ -563,5 +601,41 @@ mod tests {
 
     assert!((windows[3].tiling_size() - 0.5).abs() < f32::EPSILON);
     assert_eq!(workspace.scroll_offset(), 0);
+  }
+
+  #[test]
+  fn set_columns_per_screen_resizes_all_columns() {
+    let windows = [
+      TilingWindow::mock().tiling_size(0.5).call(),
+      TilingWindow::mock().tiling_size(0.5).call(),
+      TilingWindow::mock().tiling_size(0.5).call(),
+      TilingWindow::mock().tiling_size(0.5).call(),
+    ];
+
+    let workspace = Workspace::mock()
+      .layout_config(scrolling_layout())
+      .tiling_containers(windows.iter().cloned().map(Into::into).collect())
+      .call();
+
+    let _monitor =
+      Monitor::mock().workspaces(vec![workspace.clone()]).call();
+
+    // Scroll such that columns 2 and 3 are in view.
+    set_focused_descendant(&windows[3].clone().into(), None);
+    workspace.sync_scroll_offset().unwrap();
+
+    workspace.set_columns_per_screen(3).unwrap();
+
+    for window in &windows {
+      assert!((window.tiling_size() - 1.0 / 3.0).abs() < f32::EPSILON);
+    }
+
+    // Column 2 can't be aligned with the left edge without leaving empty
+    // space on the right, so columns 1-3 fill the viewport.
+    assert!(!workspace.is_column_visible(windows[0].id(), true, true));
+
+    for window in &windows[1..] {
+      assert!(workspace.is_column_visible(window.id(), false, false));
+    }
   }
 }

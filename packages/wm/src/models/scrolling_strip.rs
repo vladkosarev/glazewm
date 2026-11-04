@@ -174,7 +174,7 @@ impl ScrollingStrip {
 
   /// Clamps the offset such that no empty space is shown at either end of
   /// the strip.
-  fn clamp_offset(&self, offset: i32) -> i32 {
+  pub fn clamp_offset(&self, offset: i32) -> i32 {
     offset.clamp(0, (self.width() - self.viewport_width).max(0))
   }
 }
