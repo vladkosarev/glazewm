@@ -1,4 +1,5 @@
 mod attach_container;
+mod balance_tiling_sizes;
 mod detach_container;
 mod flatten_child_split_containers;
 mod flatten_split_container;
@@ -12,6 +13,7 @@ mod toggle_tiling_direction;
 mod wrap_in_split_container;
 
 pub use attach_container::*;
+pub use balance_tiling_sizes::*;
 pub use detach_container::*;
 pub use flatten_child_split_containers::*;
 pub use flatten_split_container::*;

@@ -156,6 +156,7 @@ pub enum SubscribableEvent {
 #[derive(Clone, Debug, Parser, PartialEq, Serialize)]
 pub enum InvokeCommand {
   AdjustBorders(InvokeAdjustBordersCommand),
+  Balance,
   Close,
   Focus(InvokeFocusCommand),
   Ignore,
