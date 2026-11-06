@@ -1,0 +1,69 @@
+name: Fork release
+
+# Builds the fork for 64-bit Windows on every push, and publishes the
+# executables to a rolling `fork-latest` release. Install or update via
+# `resources/scripts/update-fork.ps1`.
+on:
+  push:
+    branches: [feat/scrolling-layout]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-release
+  cancel-in-progress: true
+
+env:
+  RELEASE_TAG: fork-latest
+  TARGET: x86_64-pc-windows-msvc
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@21dc36fb71dd22e3317045c0c31a3f4249868b17
+        with:
+          targets: ${{ env.TARGET }}
+          toolchain: nightly
+
+      - uses: swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3
+        with:
+          shared-key: fork-${{ env.TARGET }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build
+        shell: bash
+        run: cargo build --locked --release --target "$TARGET" --workspace
+
+      - name: Test
+        shell: bash
+        run: cargo test --locked --release --target "$TARGET" -p wm
+
+      # Builds and publishes in a single job to avoid storing artifacts.
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASE_DIR="target/$TARGET/release"
+          ASSETS_DIR="release-assets"
+          mkdir -p "$ASSETS_DIR"
+
+          cp "$RELEASE_DIR/glazewm.exe" \
+            "$RELEASE_DIR/glazewm-cli.exe" \
+            "$RELEASE_DIR/glazewm-watcher.exe" \
+            "$ASSETS_DIR/"
+
+          # Commit the release was built from, used by the update script to
+          # check whether an update is available.
+          echo "$GITHUB_SHA" > "$ASSETS_DIR/commit.txt"
+
+          gh release delete "$RELEASE_TAG" --yes --cleanup-tag || true
+
+          gh release create "$RELEASE_TAG" "$ASSETS_DIR"/* \
+            --target "$GITHUB_SHA" \
+            --title "Fork build (${GITHUB_SHA::7})" \
+            --notes "Built from ${GITHUB_SHA} on \`${GITHUB_REF_NAME}\`. Install or update with \`resources/scripts/update-fork.ps1\`." \
+            --prerelease
