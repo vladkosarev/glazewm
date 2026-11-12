@@ -1,13 +1,14 @@
 name: Fork release
 
 # Builds the fork for 64-bit Windows on every push to `release`, and
-# publishes the executables to a rolling `fork-latest` release. Install or
-# update via `resources/scripts/update-fork.ps1`.
+# publishes an MSI installer to a rolling `fork-latest` release. Install or
+# update via the installer or `resources/scripts/update-fork.ps1`.
 #
 # Builds have UIAccess enabled (to manage elevated windows), which requires
 # them to be signed by a trusted certificate. They are signed with the
 # certificate created by `resources/scripts/new-fork-signing-cert.ps1`, via
 # the `FORK_SIGNING_PFX_BASE64` and `FORK_SIGNING_PFX_PASSWORD` secrets.
+# The installer adds the certificate to the machine's Trusted Root store.
 on:
   push:
     branches: [release]
@@ -22,6 +23,10 @@ concurrency:
 env:
   RELEASE_TAG: fork-latest
   TARGET: x86_64-pc-windows-msvc
+  # Each build is versioned higher than the last, such that the installer
+  # upgrades previous fork and official installations.
+  VERSION_NUMBER: 3.10.${{ github.run_number }}
+  MSI_NAME: glazewm-fork-x64.msi
 
 jobs:
   build-and-release:
@@ -53,38 +58,57 @@ jobs:
       - name: Sign executables
         shell: pwsh
         env:
-          PFX_BASE64: ${{ secrets.FORK_SIGNING_PFX_BASE64 }}
-          PFX_PASSWORD: ${{ secrets.FORK_SIGNING_PFX_PASSWORD }}
+          FORK_SIGNING_PFX_BASE64: ${{ secrets.FORK_SIGNING_PFX_BASE64 }}
+          FORK_SIGNING_PFX_PASSWORD: ${{ secrets.FORK_SIGNING_PFX_PASSWORD }}
         run: |
-          if (!$env:PFX_BASE64 -or !$env:PFX_PASSWORD) {
-            throw 'Signing secrets are not set.'
-          }
+          $releaseDir = "target/$env:TARGET/release"
+          ./resources/scripts/sign-fork-files.ps1 `
+            "$releaseDir/glazewm.exe" `
+            "$releaseDir/glazewm-cli.exe" `
+            "$releaseDir/glazewm-watcher.exe"
 
-          $signtool = Get-ChildItem `
-            'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1
+      - name: Install WiX
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.0
+          wix extension add -g WixToolset.UI.wixext/5 `
+            WixToolset.Util.wixext/5 WixToolset.Iis.wixext/5
 
-          $pfxPath = Join-Path $env:RUNNER_TEMP 'signing.pfx'
-          [IO.File]::WriteAllBytes(
-            $pfxPath,
-            [Convert]::FromBase64String($env:PFX_BASE64)
-          )
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $exeDir = 'out/x64'
+          New-Item -ItemType Directory -Force -Path $exeDir | Out-Null
 
-          try {
-            $files = 'glazewm.exe', 'glazewm-cli.exe', 'glazewm-watcher.exe' |
-              ForEach-Object { "target/$env:TARGET/release/$_" }
-
-            & $signtool.FullName sign /fd SHA256 /f $pfxPath `
-              /p $env:PFX_PASSWORD @files
-
-            if ($LASTEXITCODE -ne 0) {
-              throw "signtool failed with exit code $LASTEXITCODE."
+          'glazewm.exe', 'glazewm-cli.exe', 'glazewm-watcher.exe' |
+            ForEach-Object {
+              Copy-Item "target/$env:TARGET/release/$_" $exeDir
             }
+
+          wix build -arch x64 `
+            -ext WixToolset.UI.wixext `
+            -ext WixToolset.Util.wixext `
+            -ext WixToolset.Iis.wixext `
+            -out "out/$env:MSI_NAME" `
+            ./resources/wix/standalone.wxs `
+            ./resources/wix/standalone-ui.wxs `
+            ./resources/wix/fork.wxs `
+            -d VERSION_NUMBER="$env:VERSION_NUMBER" `
+            -d EXE_DIR="$exeDir" `
+            -d FORK=1 `
+            -d FORK_COMMIT="$env:GITHUB_SHA" `
+            -d MANUFACTURER='vladkosarev (GlazeWM fork)'
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "wix build failed with exit code $LASTEXITCODE."
           }
-          finally {
-            Remove-Item $pfxPath -Force
-          }
+
+      - name: Sign installer
+        shell: pwsh
+        env:
+          FORK_SIGNING_PFX_BASE64: ${{ secrets.FORK_SIGNING_PFX_BASE64 }}
+          FORK_SIGNING_PFX_PASSWORD: ${{ secrets.FORK_SIGNING_PFX_PASSWORD }}
+        run: ./resources/scripts/sign-fork-files.ps1 "out/$env:MSI_NAME"
 
       # Builds and publishes in a single job to avoid storing artifacts.
       - name: Publish release
@@ -92,15 +116,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          RELEASE_DIR="target/$TARGET/release"
           ASSETS_DIR="release-assets"
           mkdir -p "$ASSETS_DIR"
-
-          cp "$RELEASE_DIR/glazewm.exe" \
-            "$RELEASE_DIR/glazewm-cli.exe" \
-            "$RELEASE_DIR/glazewm-watcher.exe" \
-            resources/fork-signing.cer \
-            "$ASSETS_DIR/"
+          cp "out/$MSI_NAME" resources/fork-signing.cer "$ASSETS_DIR/"
 
           # Commit the release was built from, used by the update script to
           # check whether an update is available.
@@ -110,5 +128,5 @@ jobs:
 
           gh release create "$RELEASE_TAG" "$ASSETS_DIR"/* \
             --target "$GITHUB_SHA" \
-            --title "Fork build (${GITHUB_SHA::7})" \
-            --notes "Built from ${GITHUB_SHA} on \`${GITHUB_REF_NAME}\`. Install or update with \`resources/scripts/update-fork.ps1\`."
+            --title "Fork build $VERSION_NUMBER (${GITHUB_SHA::7})" \
+            --notes "Built from ${GITHUB_SHA} on \`${GITHUB_REF_NAME}\`. Run \`$MSI_NAME\` to install or update, or use \`resources/scripts/update-fork.ps1\`."

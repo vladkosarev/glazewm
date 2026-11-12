@@ -21,15 +21,17 @@
 >   center_focused_column: "never" # or "always" / "on_overflow"
 > ```
 >
-> **Install or update** (on top of the [official installer](https://github.com/glzr-io/glazewm/releases), which needs to be installed first). Run in PowerShell; it asks for admin once:
+> **Install or update** by running in PowerShell (asks for admin once; also replaces an official GlazeWM installation):
 >
 > ```powershell
 > irm https://raw.githubusercontent.com/vladkosarev/glazewm/release/resources/scripts/update-fork.ps1 | iex
 > ```
 >
-> Every push to the `release` branch is built by GitHub Actions and published to the [`fork-latest`](https://github.com/vladkosarev/glazewm/releases/tag/fork-latest) release. The script downloads it, replaces the GlazeWM executables (the official ones are kept as `*.orig`), and restarts GlazeWM. Re-run it to update.
+> Or download and run `glazewm-fork-x64.msi` from the [`fork-latest`](https://github.com/vladkosarev/glazewm/releases/tag/fork-latest) release. Since the installer isn't signed by a publicly trusted certificate, Windows SmartScreen may warn about it when downloaded via a browser (*More info* → *Run anyway*).
 >
-> Builds have UIAccess enabled, so they can manage admin (elevated) windows. Windows only allows this for executables signed by a trusted certificate, so builds are signed with a self-signed code signing certificate ([`resources/fork-signing.cer`](resources/fork-signing.cer)), which the script adds to the machine's Trusted Root store on first install. Programs signed with this certificate will be trusted on that machine. To remove it, run `certlm.msc` as admin and delete "GlazeWM fork (vladkosarev)" under Trusted Root Certification Authorities → Certificates. The certificate is created by [`resources/scripts/new-fork-signing-cert.ps1`](resources/scripts/new-fork-signing-cert.ps1).
+> Every push to the `release` branch is built by GitHub Actions and published to the `fork-latest` release. The script downloads the installer, stops GlazeWM, runs the installer, and restarts GlazeWM. Re-run it to update. Uninstall via *Settings* → *Apps*. [Zebar](https://github.com/glzr-io/zebar) isn't included and is installed separately.
+>
+> Builds have UIAccess enabled, so they can manage admin (elevated) windows. Windows only allows this for executables signed by a trusted certificate, so builds are signed with a self-signed code signing certificate ([`resources/fork-signing.cer`](resources/fork-signing.cer)), which the installer adds to the machine's Trusted Root store (and removes on uninstall). Programs signed with this certificate will be trusted on that machine. The certificate is created by [`resources/scripts/new-fork-signing-cert.ps1`](resources/scripts/new-fork-signing-cert.ps1).
 >
 > **Building locally** (cross-compile from WSL/Linux, no Windows toolchain needed):
 >

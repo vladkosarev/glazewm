@@ -1,0 +1,43 @@
+<Wix
+  xmlns="http://wixtoolset.org/schemas/v4/wxs"
+  xmlns:iis="http://wixtoolset.org/schemas/v4/wxs/iis"
+>
+  <!--
+    Fork-specific additions to the installer. Included in
+    `standalone.wxs` when built with `-d FORK=1`.
+
+    Fork builds have UIAccess enabled, which requires them to be signed by
+    a certificate in the machine's Trusted Root store. Since they are
+    signed with a self-signed certificate, the certificate is installed
+    here (and removed on uninstall).
+  -->
+  <Fragment>
+    <Binary Id="Custom_ForkSigningCertificate" SourceFile="resources/fork-signing.cer" />
+
+    <Component Id="Custom_ForkComponent" Directory="INSTALLFOLDER" Guid="4e0bb1e9-6173-4b5b-a5ee-e81029252097">
+      <iis:Certificate
+        Id="Custom_ForkCertificate"
+        Name="GlazeWM fork (vladkosarev)"
+        StoreLocation="localMachine"
+        StoreName="root"
+        BinaryRef="Custom_ForkSigningCertificate"
+        Request="no"
+      />
+
+      <!-- Commit the build is from, used by `update-fork.ps1`. -->
+      <RegistryValue
+        Root="HKLM"
+        Key="SOFTWARE\glzr.io\GlazeWM"
+        Name="ForkCommit"
+        Type="string"
+        Value="$(var.FORK_COMMIT)"
+        KeyPath="yes"
+      />
+
+      <!-- Remove leftovers from installs prior to the fork installer. -->
+      <RemoveFile Id="Custom_RemoveRootBackups" Name="*.orig" On="install" />
+      <RemoveFile Id="Custom_RemoveForkCommitFile" Name="fork-commit.txt" On="install" />
+      <RemoveFile Id="Custom_RemoveCliBackups" Directory="Custom_CliDir" Name="*.orig" On="install" />
+    </Component>
+  </Fragment>
+</Wix>

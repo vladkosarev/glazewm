@@ -1,9 +1,13 @@
+<?ifndef MANUFACTURER ?>
+<?define MANUFACTURER = "Glzr Software Pte. Ltd." ?>
+<?endif ?>
+
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
     Name="GlazeWM"
     Version="$(var.VERSION_NUMBER)"
     UpgradeCode="ef0f849b-d90d-4647-bb26-730c6fce5f9e"
-    Manufacturer="Glzr Software Pte. Ltd."
+    Manufacturer="$(var.MANUFACTURER)"
     Language="1033"
     Scope="perMachine"
   >
@@ -37,6 +41,11 @@
       <ComponentRef Id="Custom_AddStartMenuShortcut" />
       <ComponentRef Id="Custom_AddPathEnv" />
       <ComponentRef Id="Custom_RemoveAutoLaunchRegistry" />
+
+      <!-- Fork-specific components (see `fork.wxs`). -->
+      <?ifdef FORK ?>
+      <ComponentRef Id="Custom_ForkComponent" />
+      <?endif ?>
     </Feature>
 
     <StandardDirectory Id="ProgramFiles6432Folder">
