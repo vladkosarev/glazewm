@@ -7,6 +7,10 @@
 # Downloads the latest `fork-latest` release, stops GlazeWM, replaces its
 # executables (asking for admin via UAC), and restarts GlazeWM as the
 # current user. The official executables are backed up once as `*.orig`.
+#
+# Fork builds request UIAccess to manage elevated windows, which requires
+# their signing certificate to be trusted. The certificate published with
+# the release is added to the machine's Trusted Root store on first install.
 # Set `$env:GLAZEWM_FORK_FORCE = '1'` to reinstall when already up to date.
 
 # Runs in a child scope, such that settings like `$ErrorActionPreference`
@@ -19,6 +23,7 @@
   $ReleaseTag = 'fork-latest'
   $InstallDir = Join-Path $env:ProgramFiles 'glzr.io\GlazeWM'
   $VersionFile = Join-Path $InstallDir 'fork-commit.txt'
+  $CertificateAsset = 'fork-signing.cer'
 
   # Release assets and the paths they replace, relative to the install dir.
   $Files = @(
@@ -56,10 +61,32 @@
       Stop-Process -Force
   }
 
-  # Copies the downloaded executables into the install dir from an elevated
-  # process. Only this step runs as admin, such that GlazeWM itself is later
-  # started as the current user.
+  # Trusts the signing certificate and copies the downloaded executables
+  # into the install dir from an elevated process. Only this step runs as
+  # admin, such that GlazeWM itself is later started as the current user.
   function Install-Files([string]$DownloadDir, [string]$Commit) {
+    $certificatePath = Join-Path $DownloadDir $CertificateAsset
+    $thumbprint = (
+      New-Object Security.Cryptography.X509Certificates.X509Certificate2 `
+        $certificatePath
+    ).Thumbprint
+
+    if (!(Test-Path "Cert:\LocalMachine\Root\$thumbprint")) {
+      Write-Output (
+        "This installs the fork's code signing certificate " +
+        "('GlazeWM fork (vladkosarev)') into this machine's Trusted Root " +
+        'store, such that its UIAccess build can manage admin windows. ' +
+        'Programs signed with this certificate will be trusted on this ' +
+        'machine. Decline the admin prompt to cancel.'
+      )
+    }
+
+    $trustCommand = (
+      "if (!(Test-Path 'Cert:\LocalMachine\Root\$thumbprint')) { " +
+      "Import-Certificate -FilePath '$certificatePath' " +
+      "-CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null }"
+    )
+
     $copyCommands = foreach ($file in $Files) {
       $source = Join-Path $DownloadDir $file.Asset
       $target = Join-Path $InstallDir $file.Path
@@ -70,6 +97,7 @@
 
     $script = @(
       "`$ErrorActionPreference = 'Stop'"
+      $trustCommand
       $copyCommands
       "Set-Content -Path '$VersionFile' -Value '$Commit'"
     ) -join "`n"
@@ -104,10 +132,12 @@
   $downloadDir = Join-Path $env:TEMP "glazewm-fork-$latestCommit"
   New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
 
-  foreach ($file in $Files) {
-    Write-Output "Downloading $($file.Asset)..."
-    Invoke-WebRequest (Get-ReleaseAssetUrl $file.Asset) `
-      -OutFile (Join-Path $downloadDir $file.Asset) -UseBasicParsing
+  $assets = @($Files | ForEach-Object { $_.Asset }) + $CertificateAsset
+
+  foreach ($asset in $assets) {
+    Write-Output "Downloading $asset..."
+    Invoke-WebRequest (Get-ReleaseAssetUrl $asset) `
+      -OutFile (Join-Path $downloadDir $asset) -UseBasicParsing
   }
 
   Stop-GlazeWM

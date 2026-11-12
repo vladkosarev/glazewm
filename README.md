@@ -21,7 +21,17 @@
 >   center_focused_column: "never" # or "always" / "on_overflow"
 > ```
 >
-> **Building (cross-compile from WSL/Linux, no Windows toolchain needed):**
+> **Install or update** (on top of the [official installer](https://github.com/glzr-io/glazewm/releases), which needs to be installed first). Run in PowerShell; it asks for admin once:
+>
+> ```powershell
+> irm https://raw.githubusercontent.com/vladkosarev/glazewm/feat/scrolling-layout/resources/scripts/update-fork.ps1 | iex
+> ```
+>
+> Every push to this branch is built by GitHub Actions and published to the [`fork-latest`](https://github.com/vladkosarev/glazewm/releases/tag/fork-latest) release. The script downloads it, replaces the GlazeWM executables (the official ones are kept as `*.orig`), and restarts GlazeWM. Re-run it to update.
+>
+> Builds have UIAccess enabled, so they can manage admin (elevated) windows. Windows only allows this for executables signed by a trusted certificate, so builds are signed with a self-signed code signing certificate ([`resources/fork-signing.cer`](resources/fork-signing.cer)), which the script adds to the machine's Trusted Root store on first install. Programs signed with this certificate will be trusted on that machine. To remove it, run `certlm.msc` as admin and delete "GlazeWM fork (vladkosarev)" under Trusted Root Certification Authorities → Certificates. The certificate is created by [`resources/scripts/new-fork-signing-cert.ps1`](resources/scripts/new-fork-signing-cert.ps1).
+>
+> **Building locally** (cross-compile from WSL/Linux, no Windows toolchain needed):
 >
 > ```sh
 > sudo apt install mingw-w64
@@ -30,7 +40,7 @@
 > cargo test -p wm --target x86_64-pc-windows-gnu # runs via WSL interop
 > ```
 >
-> Then quit GlazeWM and replace `C:\Program Files\glzr.io\GlazeWM\glazewm.exe` with `target/x86_64-pc-windows-gnu/release/glazewm.exe`, and `...\GlazeWM\cli\glazewm.exe` with `glazewm-cli.exe` (needs admin; back up the originals first). This build doesn't have UIAccess (unsigned), so it may not be able to manage elevated windows.
+> Then quit GlazeWM and replace `C:\Program Files\glzr.io\GlazeWM\glazewm.exe` with `target/x86_64-pc-windows-gnu/release/glazewm.exe`, and `...\GlazeWM\cli\glazewm.exe` with `glazewm-cli.exe` (needs admin; back up the originals first).
 
 <div align="center">
 
