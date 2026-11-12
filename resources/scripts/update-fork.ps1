@@ -117,8 +117,11 @@
     throw "GlazeWM is not installed at '$InstallDir'. Install the official release first: https://github.com/glzr-io/glazewm/releases"
   }
 
-  $latestCommit =
-    (Invoke-WebRequest (Get-ReleaseAssetUrl 'commit.txt') -UseBasicParsing).Content.Trim()
+  # `Invoke-WebRequest` returns release assets as bytes, since GitHub
+  # serves them as binary.
+  $latestCommit = (New-Object Net.WebClient).DownloadString(
+    (Get-ReleaseAssetUrl 'commit.txt')
+  ).Trim()
 
   $installedCommit = if (Test-Path $VersionFile) {
     (Get-Content $VersionFile -Raw).Trim()
