@@ -1,5 +1,5 @@
 > [!IMPORTANT]
-> **This is a personal fork of [glzr-io/glazewm](https://github.com/glzr-io/glazewm).** The `feat/scrolling-layout` branch adds the following on top of upstream `main`:
+> **This is a personal fork of [glzr-io/glazewm](https://github.com/glzr-io/glazewm).** The `release` branch adds the following on top of upstream `main`:
 >
 > | Feature | Command / config | Default key (in my config) |
 > | --- | --- | --- |
@@ -24,10 +24,10 @@
 > **Install or update** (on top of the [official installer](https://github.com/glzr-io/glazewm/releases), which needs to be installed first). Run in PowerShell; it asks for admin once:
 >
 > ```powershell
-> irm https://raw.githubusercontent.com/vladkosarev/glazewm/feat/scrolling-layout/resources/scripts/update-fork.ps1 | iex
+> irm https://raw.githubusercontent.com/vladkosarev/glazewm/release/resources/scripts/update-fork.ps1 | iex
 > ```
 >
-> Every push to this branch is built by GitHub Actions and published to the [`fork-latest`](https://github.com/vladkosarev/glazewm/releases/tag/fork-latest) release. The script downloads it, replaces the GlazeWM executables (the official ones are kept as `*.orig`), and restarts GlazeWM. Re-run it to update.
+> Every push to the `release` branch is built by GitHub Actions and published to the [`fork-latest`](https://github.com/vladkosarev/glazewm/releases/tag/fork-latest) release. The script downloads it, replaces the GlazeWM executables (the official ones are kept as `*.orig`), and restarts GlazeWM. Re-run it to update.
 >
 > Builds have UIAccess enabled, so they can manage admin (elevated) windows. Windows only allows this for executables signed by a trusted certificate, so builds are signed with a self-signed code signing certificate ([`resources/fork-signing.cer`](resources/fork-signing.cer)), which the script adds to the machine's Trusted Root store on first install. Programs signed with this certificate will be trusted on that machine. To remove it, run `certlm.msc` as admin and delete "GlazeWM fork (vladkosarev)" under Trusted Root Certification Authorities → Certificates. The certificate is created by [`resources/scripts/new-fork-signing-cert.ps1`](resources/scripts/new-fork-signing-cert.ps1).
 >

@@ -1,8 +1,8 @@
 name: Fork release
 
-# Builds the fork for 64-bit Windows on every push, and publishes the
-# executables to a rolling `fork-latest` release. Install or update via
-# `resources/scripts/update-fork.ps1`.
+# Builds the fork for 64-bit Windows on every push to `release`, and
+# publishes the executables to a rolling `fork-latest` release. Install or
+# update via `resources/scripts/update-fork.ps1`.
 #
 # Builds have UIAccess enabled (to manage elevated windows), which requires
 # them to be signed by a trusted certificate. They are signed with the
@@ -10,7 +10,7 @@ name: Fork release
 # the `FORK_SIGNING_PFX_BASE64` and `FORK_SIGNING_PFX_PASSWORD` secrets.
 on:
   push:
-    branches: [feat/scrolling-layout]
+    branches: [release]
 
 permissions:
   contents: write

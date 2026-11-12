@@ -2,7 +2,7 @@
 # installation.
 #
 # Usage (from any PowerShell window, no admin needed):
-#   irm https://raw.githubusercontent.com/vladkosarev/glazewm/feat/scrolling-layout/resources/scripts/update-fork.ps1 | iex
+#   irm https://raw.githubusercontent.com/vladkosarev/glazewm/release/resources/scripts/update-fork.ps1 | iex
 #
 # Downloads the latest `fork-latest` release, stops GlazeWM, replaces its
 # executables (asking for admin via UAC), and restarts GlazeWM as the
