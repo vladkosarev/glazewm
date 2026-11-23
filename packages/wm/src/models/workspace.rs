@@ -51,6 +51,11 @@ struct WorkspaceInner {
   /// In-progress animation of the scroll offset, along with the current
   /// (i.e. displayed) offset of the animation.
   scroll_animation: Option<(ScrollAnimation, i32)>,
+
+  /// Size of newly tiled columns in the scrolling layout, as set by
+  /// `Workspace::set_columns_per_screen`. Overrides the configured
+  /// default column width.
+  column_size_override: Option<f32>,
 }
 
 impl Workspace {
@@ -78,6 +83,7 @@ impl Workspace {
       scroll_offset: 0,
       committed_scroll_offset: 0,
       scroll_animation: None,
+      column_size_override: None,
     };
 
     Self(Rc::new(RefCell::new(workspace)))
@@ -382,7 +388,10 @@ impl Workspace {
       self.column_indices_in_view()?.first().copied().unwrap_or(0);
 
     #[allow(clippy::cast_precision_loss)]
-    let column_size = 1.0 / count.max(1) as f32;
+    let column_size = clamp_column_size(1.0 / count.max(1) as f32);
+
+    // New columns are opened with the same size.
+    self.0.borrow_mut().column_size_override = Some(column_size);
 
     self.resize_columns_and_align(|_| true, column_size, align_index)
   }
@@ -454,7 +463,14 @@ impl Workspace {
   }
 
   /// Default size of newly tiled columns in the scrolling layout.
+  ///
+  /// This is the size set via `set_columns_per_screen` if any, otherwise
+  /// the configured default column width.
   pub fn default_column_size(&self) -> anyhow::Result<f32> {
+    if let Some(column_size) = self.0.borrow().column_size_override {
+      return Ok(column_size);
+    }
+
     self.column_size(&self.layout_config().default_column_width)
   }
 
@@ -588,7 +604,9 @@ mod tests {
   use wm_common::{LayoutConfig, LayoutType};
 
   use crate::{
-    commands::container::{detach_container, set_focused_descendant},
+    commands::container::{
+      attach_container, detach_container, set_focused_descendant,
+    },
     models::{Monitor, TilingWindow, Workspace},
     test_utils::MOCK_MONITOR_WIDTH,
     traits::{CommonGetters, PositionGetters, TilingSizeGetters},
@@ -734,6 +752,51 @@ mod tests {
     for window in &windows[1..] {
       assert!(workspace.is_column_visible(window.id(), false, false));
     }
+
+    // New columns are opened with the same size.
+    assert!(
+      (workspace.default_column_size().unwrap() - 1.0 / 3.0).abs()
+        < f32::EPSILON
+    );
+  }
+
+  #[test]
+  fn centered_column_stays_centered_when_new_column_fits() {
+    let windows = [
+      TilingWindow::mock().tiling_size(0.5).call(),
+      TilingWindow::mock().tiling_size(0.5).call(),
+    ];
+
+    let workspace = Workspace::mock()
+      .layout_config(scrolling_layout())
+      .tiling_containers(windows.iter().cloned().map(Into::into).collect())
+      .call();
+
+    let _monitor =
+      Monitor::mock().workspaces(vec![workspace.clone()]).call();
+
+    workspace.set_columns_per_screen(3).unwrap();
+    set_focused_descendant(&windows[1].clone().into(), None);
+    workspace.center_column(windows[1].id()).unwrap();
+    workspace.sync_scroll_offset().unwrap();
+    let centered_offset = workspace.scroll_offset();
+
+    // Open a new column to the right of the centered column.
+    let new_window = TilingWindow::mock()
+      .tiling_size(workspace.default_column_size().unwrap())
+      .call();
+
+    attach_container(
+      &new_window.clone().into(),
+      &workspace.clone().into(),
+      None,
+    )
+    .unwrap();
+
+    set_focused_descendant(&new_window.clone().into(), None);
+    workspace.sync_scroll_offset().unwrap();
+
+    assert_eq!(workspace.scroll_offset(), centered_offset);
   }
 
   #[test]
