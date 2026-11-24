@@ -163,6 +163,7 @@ pub enum InvokeCommand {
   Focus(InvokeFocusCommand),
   FocusColumnFirst,
   FocusColumnLast,
+  MaximizeColumn,
   Ignore,
   Move(InvokeMoveCommand),
   MoveColumnToFirst,

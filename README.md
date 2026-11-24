@@ -7,6 +7,7 @@
 > | **Scrolling layout** (like [niri](https://github.com/YaLTeR/niri) / PaperWM) – windows are columns on a horizontal strip; the screen scrolls to follow focus. Columns cut off by the screen edge peek in, unless another monitor is on that side. | `layout: { type: "scrolling" }` | – |
 > | **Cycle column width** through preset widths (default 33% / 50% / 67%). | `cycle-column-width` | `alt+w` |
 > | **Center the focused column.** | `center-column` | `alt+c` |
+> | **Maximize column** (like niri) – toggle the focused column to fill the screen width, keeping gaps and staying part of the layout; toggle again to restore its width. Real fullscreen is still available via `toggle-fullscreen`. | `maximize-column` | `alt+f` (fullscreen: `alt+ctrl+f`) |
 > | **Scroll animation** (experimental) – columns slide instead of jumping when the screen scrolls. | `layout: { scroll_animation_ms: 150 }` | – |
 > | **Jump to first/last column**, or move the focused column there (like niri). | `focus-column-first` / `focus-column-last`, `move-column-to-first` / `move-column-to-last` | `alt+home` / `alt+end`, `alt+ctrl+home` / `alt+ctrl+end` |
 > | **Fit N columns per screen** – resize all columns so N fit on screen. | `set-columns-per-screen <n>` | `alt+ctrl+1` … `alt+ctrl+0` (= 10) |
@@ -333,6 +334,12 @@ keybindings:
   # Center the focused column on screen.
   - commands: ["center-column"]
     bindings: ["alt+c"]
+
+  # Toggle the focused column between filling the screen width and its
+  # previous width. Unlike `toggle-fullscreen`, gaps are kept and the
+  # column stays part of the layout.
+  - commands: ["maximize-column"]
+    bindings: ["alt+f"]
 
   # Focus the first/last column of the workspace.
   - commands: ["focus-column-first"]

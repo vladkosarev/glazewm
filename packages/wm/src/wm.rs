@@ -19,8 +19,8 @@ use crate::{
     container::{
       balance_tiling_sizes, center_column, cycle_column_width,
       focus_column_end, focus_container_by_id, focus_in_direction,
-      move_column_to_end, set_columns_per_screen, set_tiling_direction,
-      toggle_tiling_direction, ColumnEnd,
+      maximize_column, move_column_to_end, set_columns_per_screen,
+      set_tiling_direction, toggle_tiling_direction, ColumnEnd,
     },
     general::{
       cycle_focus, disable_binding_mode, enable_binding_mode,
@@ -295,6 +295,10 @@ impl WindowManager {
       }
       InvokeCommand::CycleColumnWidth => {
         cycle_column_width(&subject_container, state)
+      }
+      InvokeCommand::MaximizeColumn => {
+        maximize_column(&subject_container, state);
+        Ok(())
       }
       InvokeCommand::Close => {
         match subject_container.as_window_container() {

@@ -1,6 +1,6 @@
 use std::{
   cell::{Ref, RefCell, RefMut},
-  collections::VecDeque,
+  collections::{HashMap, VecDeque},
   rc::Rc,
   time::{Duration, Instant},
 };
@@ -25,6 +25,9 @@ use crate::{
     TilingSizeGetters,
   },
 };
+
+/// Tolerance when checking whether a column fills the viewport.
+const MAXIMIZED_SIZE_EPSILON: f32 = 0.001;
 
 #[derive(Clone)]
 pub struct Workspace(Rc<RefCell<WorkspaceInner>>);
@@ -67,6 +70,10 @@ struct WorkspaceInner {
   /// Scroll offset to restore if the most recently opened column is
   /// closed (see `ScrollRestore`).
   scroll_restore: Option<ScrollRestore>,
+
+  /// Sizes of maximized columns before they were maximized, keyed by
+  /// column ID (see `Workspace::toggle_column_maximized`).
+  sizes_before_maximize: HashMap<Uuid, f32>,
 }
 
 /// Scroll offset to restore when a newly opened column is removed.
@@ -121,6 +128,7 @@ impl Workspace {
       synced_column_ids: Vec::new(),
       synced_focused_column_id: None,
       scroll_restore: None,
+      sizes_before_maximize: HashMap::new(),
     };
 
     Self(Rc::new(RefCell::new(workspace)))
@@ -555,6 +563,44 @@ impl Workspace {
     }
 
     Ok(())
+  }
+
+  /// Gets the size to toggle a column of the scrolling layout to, when
+  /// toggling whether it's maximized (i.e. fills the viewport).
+  ///
+  /// Maximizing remembers the column's current size, which is restored
+  /// when toggling again. A column that was resized after being maximized
+  /// gets maximized again instead.
+  ///
+  /// Returns `None` if the column is already full-width and wasn't
+  /// maximized via this method.
+  pub fn toggle_column_maximized(
+    &self,
+    column_id: Uuid,
+    current_size: f32,
+  ) -> Option<f32> {
+    let column_ids = self
+      .tiling_children()
+      .map(|child| child.id())
+      .collect::<Vec<_>>();
+
+    let mut inner = self.0.borrow_mut();
+
+    // Discard sizes of columns that have since been removed.
+    inner
+      .sizes_before_maximize
+      .retain(|id, _| column_ids.contains(id));
+
+    let is_maximized = (current_size - 1.0).abs() < MAXIMIZED_SIZE_EPSILON;
+
+    match inner.sizes_before_maximize.remove(&column_id) {
+      Some(prev_size) if is_maximized => Some(prev_size),
+      _ if is_maximized => None,
+      _ => {
+        inner.sizes_before_maximize.insert(column_id, current_size);
+        Some(1.0)
+      }
+    }
   }
 
   /// Resets the scroll offset of the scrolling layout's viewport.
@@ -1011,6 +1057,36 @@ mod tests {
 
     assert_ne!(offset_after_focus, centered_offset);
     assert_ne!(workspace.scroll_offset(), centered_offset);
+  }
+
+  #[test]
+  fn toggling_maximized_column_restores_previous_size() {
+    let windows = [
+      TilingWindow::mock().tiling_size(0.5).call(),
+      TilingWindow::mock().tiling_size(1.0).call(),
+    ];
+
+    let workspace = Workspace::mock()
+      .layout_config(scrolling_layout())
+      .tiling_containers(windows.iter().cloned().map(Into::into).collect())
+      .call();
+
+    let id = windows[0].id();
+
+    // Maximizes, then restores the previous size.
+    assert_eq!(workspace.toggle_column_maximized(id, 0.5), Some(1.0));
+    assert_eq!(workspace.toggle_column_maximized(id, 1.0), Some(0.5));
+
+    // Resizing after maximizing causes the column to be maximized again.
+    assert_eq!(workspace.toggle_column_maximized(id, 0.5), Some(1.0));
+    assert_eq!(workspace.toggle_column_maximized(id, 0.4), Some(1.0));
+    assert_eq!(workspace.toggle_column_maximized(id, 1.0), Some(0.4));
+
+    // Columns that are already full-width are left unchanged.
+    assert_eq!(
+      workspace.toggle_column_maximized(windows[1].id(), 1.0),
+      None
+    );
   }
 
   #[test]
