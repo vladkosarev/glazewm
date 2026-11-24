@@ -56,6 +56,40 @@ struct WorkspaceInner {
   /// `Workspace::set_columns_per_screen`. Overrides the configured
   /// default column width.
   column_size_override: Option<f32>,
+
+  /// IDs of the columns as of the last `Workspace::sync_scroll_offset`.
+  synced_column_ids: Vec<Uuid>,
+
+  /// ID of the focused column as of the last
+  /// `Workspace::sync_scroll_offset`.
+  synced_focused_column_id: Option<Uuid>,
+
+  /// Scroll offset to restore if the most recently opened column is
+  /// closed (see `ScrollRestore`).
+  scroll_restore: Option<ScrollRestore>,
+}
+
+/// Scroll offset to restore when a newly opened column is removed.
+///
+/// A column that opens to the right of the focused column and takes focus
+/// might scroll the previously focused column (e.g. a centered column) to
+/// the edge of the viewport. If the new column is then removed without
+/// focus moving to another column in-between, the previously focused
+/// column is shown as it was before.
+#[derive(Clone, Debug)]
+struct ScrollRestore {
+  /// ID of the newly opened column.
+  column_id: Uuid,
+
+  /// ID of the column that was focused before the new column opened.
+  prev_column_id: Uuid,
+
+  /// Start position (in pixels) of the previously focused column within
+  /// the scrolling strip.
+  prev_column_start: i32,
+
+  /// Scroll offset before the new column opened.
+  scroll_offset: i32,
 }
 
 impl Workspace {
@@ -84,6 +118,9 @@ impl Workspace {
       committed_scroll_offset: 0,
       scroll_animation: None,
       column_size_override: None,
+      synced_column_ids: Vec::new(),
+      synced_focused_column_id: None,
+      scroll_restore: None,
     };
 
     Self(Rc::new(RefCell::new(workspace)))
@@ -303,6 +340,11 @@ impl Workspace {
   pub fn sync_scroll_offset(&self) -> anyhow::Result<bool> {
     let strip = self.scrolling_strip()?;
 
+    let column_ids = self
+      .tiling_children()
+      .map(|child| child.id())
+      .collect::<Vec<_>>();
+
     // Get indices of the most and second-most recently focused columns.
     let mut focus_order = self
       .tiling_children()
@@ -312,18 +354,111 @@ impl Workspace {
 
     focus_order.sort_unstable();
     let mut focused_columns = focus_order.into_iter().map(|(_, i)| i);
+    let focused_index = focused_columns.next();
+    let focused_id = focused_index.map(|index| column_ids[index]);
+
+    let prev_scroll_offset = self.scroll_offset();
+    let restored_offset =
+      self.take_restored_scroll_offset(&strip, &column_ids, focused_id);
 
     let scroll_offset = strip.scroll_offset_for_focus(
+      focused_index,
       focused_columns.next(),
-      focused_columns.next(),
-      self.scroll_offset(),
+      restored_offset.unwrap_or(prev_scroll_offset),
       &self.0.borrow().layout_config.center_focused_column,
     );
 
-    let has_changed = scroll_offset != self.scroll_offset();
-    self.0.borrow_mut().scroll_offset = scroll_offset;
+    self.track_new_column(&strip, &column_ids, focused_index);
 
-    Ok(has_changed)
+    let mut inner = self.0.borrow_mut();
+    inner.scroll_offset = scroll_offset;
+    inner.synced_column_ids = column_ids;
+    inner.synced_focused_column_id = focused_id;
+
+    Ok(scroll_offset != prev_scroll_offset)
+  }
+
+  /// Gets the scroll offset to restore if the most recently opened column
+  /// was removed and focus returned to the previously focused column.
+  ///
+  /// Discards the pending restore once it no longer applies (i.e. when
+  /// focus moves away from the new column).
+  fn take_restored_scroll_offset(
+    &self,
+    strip: &ScrollingStrip,
+    column_ids: &[Uuid],
+    focused_id: Option<Uuid>,
+  ) -> Option<i32> {
+    let restore = self.0.borrow_mut().scroll_restore.take()?;
+
+    if column_ids.contains(&restore.column_id) {
+      // Keep the restore while the new column remains focused.
+      if focused_id == Some(restore.column_id) {
+        self.0.borrow_mut().scroll_restore = Some(restore);
+      }
+
+      return None;
+    }
+
+    if focused_id != Some(restore.prev_column_id) {
+      return None;
+    }
+
+    // Account for columns to the left having been resized or removed.
+    let prev_index = column_ids
+      .iter()
+      .position(|id| *id == restore.prev_column_id)?;
+
+    let (prev_column_start, _) = strip.column(prev_index)?;
+
+    Some(
+      restore.scroll_offset + prev_column_start
+        - restore.prev_column_start,
+    )
+  }
+
+  /// Sets up a `ScrollRestore` if a new column was opened to the right of
+  /// the previously focused column and took focus.
+  fn track_new_column(
+    &self,
+    strip: &ScrollingStrip,
+    column_ids: &[Uuid],
+    focused_index: Option<usize>,
+  ) {
+    let mut inner = self.0.borrow_mut();
+
+    let Some(focused_index) = focused_index else {
+      return;
+    };
+
+    let focused_id = column_ids[focused_index];
+
+    if inner.synced_column_ids.contains(&focused_id) {
+      return;
+    }
+
+    let prev_index = focused_index.checked_sub(1);
+
+    let restore = prev_index.and_then(|prev_index| {
+      let prev_column_id = column_ids[prev_index];
+
+      if inner.synced_focused_column_id != Some(prev_column_id) {
+        return None;
+      }
+
+      let (prev_column_start, _) = strip.column(prev_index)?;
+
+      Some(ScrollRestore {
+        column_id: focused_id,
+        prev_column_id,
+        prev_column_start,
+        scroll_offset: inner.scroll_offset,
+      })
+    });
+
+    if restore.is_some() {
+      inner.scroll_restore = restore;
+    }
   }
 
   /// Scrolls the viewport of the scrolling layout to center the given
@@ -797,6 +932,85 @@ mod tests {
     workspace.sync_scroll_offset().unwrap();
 
     assert_eq!(workspace.scroll_offset(), centered_offset);
+  }
+
+  /// Creates a scrolling workspace with two half-width columns, where the
+  /// second column is focused and centered.
+  fn workspace_with_centered_column(
+  ) -> (Workspace, Monitor, [TilingWindow; 2]) {
+    let windows = [
+      TilingWindow::mock().tiling_size(0.5).call(),
+      TilingWindow::mock().tiling_size(0.5).call(),
+    ];
+
+    let workspace = Workspace::mock()
+      .layout_config(scrolling_layout())
+      .tiling_containers(windows.iter().cloned().map(Into::into).collect())
+      .call();
+
+    let monitor =
+      Monitor::mock().workspaces(vec![workspace.clone()]).call();
+
+    set_focused_descendant(&windows[1].clone().into(), None);
+    workspace.center_column(windows[1].id()).unwrap();
+    workspace.sync_scroll_offset().unwrap();
+
+    (workspace, monitor, windows)
+  }
+
+  /// Opens a new half-width column to the right of the focused column,
+  /// and focuses it.
+  fn open_column(workspace: &Workspace) -> TilingWindow {
+    let window = TilingWindow::mock().tiling_size(0.5).call();
+
+    attach_container(
+      &window.clone().into(),
+      &workspace.clone().into(),
+      None,
+    )
+    .unwrap();
+
+    set_focused_descendant(&window.clone().into(), None);
+    workspace.sync_scroll_offset().unwrap();
+
+    window
+  }
+
+  #[test]
+  fn closing_new_column_restores_previous_scroll_offset() {
+    let (workspace, _monitor, windows) = workspace_with_centered_column();
+    let centered_offset = workspace.scroll_offset();
+
+    let new_window = open_column(&workspace);
+    assert_ne!(workspace.scroll_offset(), centered_offset);
+
+    detach_container(new_window.into()).unwrap();
+    set_focused_descendant(&windows[1].clone().into(), None);
+    workspace.sync_scroll_offset().unwrap();
+
+    assert_eq!(workspace.scroll_offset(), centered_offset);
+  }
+
+  #[test]
+  fn focus_change_discards_scroll_restore() {
+    let (workspace, _monitor, windows) = workspace_with_centered_column();
+    let centered_offset = workspace.scroll_offset();
+
+    let new_window = open_column(&workspace);
+
+    // Focus away from and back to the new column.
+    set_focused_descendant(&windows[1].clone().into(), None);
+    workspace.sync_scroll_offset().unwrap();
+    set_focused_descendant(&new_window.clone().into(), None);
+    workspace.sync_scroll_offset().unwrap();
+    let offset_after_focus = workspace.scroll_offset();
+
+    detach_container(new_window.into()).unwrap();
+    set_focused_descendant(&windows[1].clone().into(), None);
+    workspace.sync_scroll_offset().unwrap();
+
+    assert_ne!(offset_after_focus, centered_offset);
+    assert_ne!(workspace.scroll_offset(), centered_offset);
   }
 
   #[test]
